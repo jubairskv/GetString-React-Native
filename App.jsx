@@ -1,45 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Button } from 'react-native';
-import { NativeModules } from 'react-native';
+import React, {useState} from 'react';
+import {View, Button, Alert, Text} from 'react-native';
+import {NativeModules} from 'react-native';
 
-const { MyModule } = NativeModules;
+const {MyModule} = NativeModules;
 
 const App = () => {
-  const [dummyString, setDummyString] = useState('');
+  const [isCameraLaunched, setIsCameraLaunched] = useState(false);
 
-  const fetchDummyString = async () => {
+  const launchCamera = async () => {
     try {
-      const result = await MyModule.getDummyString();
-      setDummyString(result);
+      const response = await MyModule.startCameraPreview();
+      setIsCameraLaunched(true);
+      Alert.alert('Success', response);
     } catch (error) {
-      console.error('Error fetching dummy string:', error);
+      setIsCameraLaunched(false);
+      Alert.alert('Error', error.message);
     }
   };
 
-  useEffect(() => {
-    fetchDummyString(); // Fetch the dummy string on component mount
-  }, []);
-
   return (
-    <View style={styles.container}>
-      <Text style={styles.text}>{dummyString || 'Loading...'}</Text>
-      <Button title="Refresh Dummy String" onPress={fetchDummyString} />
+    <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+      <Button title="Launch Camera" onPress={launchCamera} />
+      {isCameraLaunched && (
+        <Text style={{marginTop: 20}}>Camera Launched</Text>
+      )}
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  text: {
-    fontSize: 18,
-    color: '#333',
-    marginBottom: 20,
-  },
-});
 
 export default App;
