@@ -20,7 +20,7 @@ class MainApplication : Application(), ReactApplication {
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
                 // Correctly initialize MyModule with ReactApplicationContext
-                add(MyReactPackage()) // This is the correct way to add your module package
+                add(MyPackage()) // This is the correct way to add your module package
             }
 
         override fun getJSMainModuleName(): String = "index"
