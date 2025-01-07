@@ -294,7 +294,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
 
             // Draw task status
             var yOffset = scaledTop - 60f
-            headMovementTasks.forEach { (task, completed) ->
+            headMovementTasks.forEach { (task, completed) -> 
                 val status = if (completed) "✓" else "×"
                 canvas.drawText("$task: $status", scaledLeft, yOffset, paint)
                 yOffset -= 60f
