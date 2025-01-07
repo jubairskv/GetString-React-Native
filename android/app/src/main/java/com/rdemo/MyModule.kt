@@ -376,5 +376,4 @@ private fun showInPreview(file: File) {
     }
 }
 
-
 }
