@@ -15,6 +15,10 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.UiThreadUtil
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
 
 class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
@@ -26,6 +30,8 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     private lateinit var frameLayout: FrameLayout
     private lateinit var textureView: TextureView
     private lateinit var overlayImageView: ImageView
+    private var lastDetectionTime = 0L
+    private val detectionInterval = 500L // Process every 500ms
 
     override fun getName(): String = "MyModule"
 
@@ -50,8 +56,10 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                     }
 
                     override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {
-                        if (!isDetectingFaces) {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastDetectionTime >= detectionInterval && !isDetectingFaces) {
                             isDetectingFaces = true
+                            lastDetectionTime = currentTime
                             detectFaces()
                         }
                     }
@@ -92,11 +100,13 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
 
     private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
         val cameraManager = currentActivity!!.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = cameraManager.cameraIdList[1]
+        val cameraId = cameraManager.cameraIdList[1] // Use front-facing camera if available
 
         try {
+            Log.d("CameraModule", "Opening camera: $cameraId")
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
+                    Log.d("CameraModule", "Camera opened successfully.")
                     cameraDevice = camera
                     createCameraPreviewSession(surfaceTexture, promise)
                 }
@@ -104,14 +114,17 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                 override fun onDisconnected(camera: CameraDevice) {
                     camera.close()
                     cameraDevice = null
+                    Log.d("CameraModule", "Camera disconnected.")
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
                     promise.reject("CameraError", "Failed to open camera: $error")
+                    Log.e("CameraModule", "Error opening camera: $error")
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
             promise.reject("CameraError", "Error opening camera: ${e.message}")
+            Log.e("CameraModule", "Error opening camera: ${e.message}")
         }
     }
 
@@ -125,15 +138,18 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                 override fun onConfigured(session: CameraCaptureSession) {
                     cameraCaptureSession = session
                     session.setRepeatingRequest(previewRequestBuilder.build(), null, backgroundHandler)
+                    Log.d("CameraModule", "Camera session configured successfully.")
                     promise.resolve("Camera preview started successfully!")
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
                     promise.reject("CameraError", "Failed to configure camera session")
+                    Log.e("CameraModule", "Failed to configure camera session.")
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
             promise.reject("CameraError", "Failed to create preview session: ${e.message}")
+            Log.e("CameraModule", "Error creating camera session: ${e.message}")
         }
     }
 
@@ -142,49 +158,60 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         cameraCaptureSession = null
         cameraDevice?.close()
         cameraDevice = null
+        Log.d("CameraModule", "Camera stopped.")
     }
 
     private fun detectFaces() {
         backgroundHandler?.post {
             try {
                 val bitmap = textureView.bitmap ?: return@post
-                val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-                val canvas = Canvas(mutableBitmap)
-                val paint = Paint().apply {
-                    color = Color.GREEN
-                    style = Paint.Style.STROKE
-                    strokeWidth = 5f
-                }
+                val downscaledBitmap = Bitmap.createScaledBitmap(bitmap, bitmap.width / 2, bitmap.height / 2, false)
 
-                val maxFaces = 5
-                val faceDetector = android.media.FaceDetector(mutableBitmap.width, mutableBitmap.height, maxFaces)
-                val faces = arrayOfNulls<android.media.FaceDetector.Face>(maxFaces)
-                val faceCount = faceDetector.findFaces(mutableBitmap, faces)
+                // Create InputImage from the downscaled bitmap for better performance
+                val image = InputImage.fromBitmap(downscaledBitmap, 0)
 
-                for (i in 0 until faceCount) {
-                    val face = faces[i]
-                    face?.let {
-                        val midPoint = PointF()
-                        it.getMidPoint(midPoint)
-                        val eyesDistance = it.eyesDistance()
-                        canvas.drawRect(
-                            midPoint.x - eyesDistance,
-                            midPoint.y - eyesDistance,
-                            midPoint.x + eyesDistance,
-                            midPoint.y + eyesDistance,
-                            paint
-                        )
+                val options = FaceDetectorOptions.Builder()
+                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST) // Use fast mode
+                    .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+                    .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+                    .build()
+
+                val detector = FaceDetection.getClient(options)
+
+                Log.d("FaceDetection", "Starting face detection.")
+                detector.process(image)
+                    .addOnSuccessListener { faces ->
+                        Log.d("FaceDetection", "Faces detected: ${faces.size}")
+                        drawFacesOnBitmap(bitmap, faces)
                     }
-                }
-
-                UiThreadUtil.runOnUiThread {
-                    overlayImageView.setImageBitmap(mutableBitmap)
-                }
+                    .addOnFailureListener { e ->
+                        Log.e("FaceDetection", "Face detection failed: ${e.message}")
+                    }
             } catch (e: Exception) {
                 Log.e("FaceDetection", "Error detecting faces: ${e.message}")
             } finally {
                 isDetectingFaces = false
             }
+        }
+    }
+
+    private fun drawFacesOnBitmap(bitmap: Bitmap, faces: List<Face>) {
+        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(mutableBitmap)
+        val paint = Paint().apply {
+            color = Color.GREEN
+            style = Paint.Style.STROKE
+            strokeWidth = 5f
+        }
+
+        for (face in faces) {
+            val bounds = face.boundingBox
+            canvas.drawRect(bounds, paint)
+        }
+
+        UiThreadUtil.runOnUiThread {
+            overlayImageView.setImageBitmap(mutableBitmap)
+            Log.d("FaceDetection", "Face bounding boxes drawn.")
         }
     }
 }
