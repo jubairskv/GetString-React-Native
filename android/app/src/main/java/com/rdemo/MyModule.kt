@@ -369,8 +369,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         }
     }
 }
-
-   private fun takePicture() {
+private fun takePicture() {
     UiThreadUtil.runOnUiThread {
         // Create a TextView for the countdown
         val countdownTextView = TextView(currentActivity).apply {
@@ -388,42 +387,46 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         frameLayout.addView(countdownTextView)
 
         // Start a countdown from 4 to 1
-        val countdownDuration = 4000L // 4 seconds
-        val interval = 1000L // 1 second
-        val startTime = System.currentTimeMillis()
+        var remainingTime = 4 // Initial countdown value
 
+        // Immediately update the countdown every second (without using postDelayed)
         val countdownHandler = Handler()
-        val countdownRunnable = object : Runnable {
-            override fun run() {
-                val elapsedTime = System.currentTimeMillis() - startTime
-                val remainingTime = (countdownDuration - elapsedTime) / 1000
-                if (remainingTime >= 0) {
-                   countdownTextView.text = remainingTime.toString()
-                    countdownHandler.postDelayed(this, interval)
-                } else {
-                    // Remove the countdown TextView after the countdown finishes
-                    frameLayout.removeView(countdownTextView)
-
-                    // Take the picture
-                    backgroundHandler?.post {
-                        try {
-                            val bitmap = textureView.bitmap
-                            bitmap?.let {
-                                savePicture(bitmap)
-                                isPictureTaken = true
-                            }
-                        } catch (e: Exception) {
-                            Log.e("Picture", "Error taking picture: ${e.message}")
-                        }
-                    }
+        
+        // Set up a loop to manually decrement the countdown
+        Thread {
+            while (remainingTime > 0) {
+                countdownHandler.post {
+                    countdownTextView.text = remainingTime.toString()
                 }
+                Thread.sleep(1000) // Wait for 1 second before updating the countdown
+                remainingTime--
             }
-        }
+            // Countdown finished
+            countdownHandler.post {
+                frameLayout.removeView(countdownTextView)
+            }
 
-        countdownHandler.post(countdownRunnable)
+            // Immediately take the picture
+            captureSelfie()
+        }.start()
     }
 }
 
+
+
+private fun captureSelfie() {
+    backgroundHandler?.post {
+        try {
+            val bitmap = textureView.bitmap
+            bitmap?.let {
+                savePicture(it)
+                isPictureTaken = true
+            }
+        } catch (e: Exception) {
+            Log.e("Picture", "Error taking picture: ${e.message}")
+        }
+    }
+}
 
 private fun savePicture(bitmap: Bitmap) {
     try {
@@ -432,7 +435,8 @@ private fun savePicture(bitmap: Bitmap) {
         bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
         outputStream.flush()
         outputStream.close()
-        // After saving, you can now show the file in preview
+
+        // Immediately show the photo in preview
         showInPreview(file)
     } catch (e: Exception) {
         Log.e("MyModule", "Error saving photo: ${e.message}")
@@ -441,9 +445,17 @@ private fun savePicture(bitmap: Bitmap) {
 
 private fun showInPreview(file: File) {
     UiThreadUtil.runOnUiThread {
-        val previewImageView = ImageView(currentActivity)
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-        previewImageView.setImageBitmap(bitmap)
+        val previewImageView = ImageView(currentActivity).apply {
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+            setImageBitmap(bitmap)
+
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+        }
 
         // Assuming frameLayout is already initialized
         frameLayout.addView(previewImageView)
