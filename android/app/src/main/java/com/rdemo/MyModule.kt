@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.*
+import android.widget.Toast
 import android.hardware.camera2.*
 import android.os.Handler
 import android.os.HandlerThread
@@ -290,30 +291,41 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     }
 
     private fun processDetectedFace(face: Face) {
-        val headEulerAngleY = face.headEulerAngleY
-        val leftEyeOpenProb = face.leftEyeOpenProbability ?: -1.0f
-        val rightEyeOpenProb = face.rightEyeOpenProbability ?: -1.0f
+    val headEulerAngleY = face.headEulerAngleY
+    val leftEyeOpenProb = face.leftEyeOpenProbability ?: -1.0f
+    val rightEyeOpenProb = face.rightEyeOpenProbability ?: -1.0f
 
-        when {
-            !headMovementTasks["Blink detected"]!! &&
-                    leftEyeOpenProb < 0.5 && rightEyeOpenProb < 0.5 -> {
-                updateTask("Blink detected")
-                Log.d("FaceDetection", "Blink detected")
-            }
-            headMovementTasks["Blink detected"]!! &&
-                    !headMovementTasks["Head moved right"]!! &&
-                    headEulerAngleY > 10 -> {
-                updateTask("Head moved right")
-                Log.d("FaceDetection", "Head turned right")
-            }
-            headMovementTasks["Head moved right"]!! &&
-                    !headMovementTasks["Head moved left"]!! &&
-                    headEulerAngleY < -10 -> {
-                updateTask("Head moved left")
-                Log.d("FaceDetection", "Head turned left")
-            }
+    // Evaluate head movements and update tasks
+    when {
+        !headMovementTasks["Blink detected"]!! &&
+                leftEyeOpenProb < 0.5 && rightEyeOpenProb < 0.5 -> {
+            updateTask("Blink detected")
+            Log.d("FaceDetection", "Blink detected")
+        }
+        headMovementTasks["Blink detected"]!! &&
+                !headMovementTasks["Head moved right"]!! &&
+                headEulerAngleY > 10 -> {
+            updateTask("Head moved right")
+            Log.d("FaceDetection", "Head turned right")
+        }
+        headMovementTasks["Head moved right"]!! &&
+                !headMovementTasks["Head moved left"]!! &&
+                headEulerAngleY < -10 -> {
+            updateTask("Head moved left")
+            Log.d("FaceDetection", "Head turned left")
         }
     }
+
+    // Additional checks and actions outside the `when` block
+    if (!headMovementTasks["Blink detected"]!!) {
+        showToasty("Please close your eyes for a second")
+    } else if (!headMovementTasks["Head moved right"]!!) {
+        showToasty("Please turn your head to the right")
+    } else if (!headMovementTasks["Head moved left"]!!) {
+        showToasty("Please turn your head to the left")
+    }
+}
+
 
     private fun updateTask(taskName: String) {
         headMovementTasks[taskName] = true
@@ -370,7 +382,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     }
 }
 private fun takePicture() {
-    UiThreadUtil.runOnUiThread {
+    UiThreadUtil.runOnUiThread {   
         // Check if a countdown is already in progress
         val existingCountdownView = frameLayout.findViewWithTag<TextView>("countdownTextView")
         if (existingCountdownView != null) {
@@ -469,5 +481,12 @@ private fun showInPreview(file: File) {
         frameLayout.addView(previewImageView)
     }
 }
+
+private fun showToasty(message: String) {
+    UiThreadUtil.runOnUiThread {
+        Toast.makeText(currentActivity, message, Toast.LENGTH_SHORT).show()
+    }
+}
+
 
 }
