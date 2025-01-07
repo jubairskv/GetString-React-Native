@@ -371,6 +371,13 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
 }
 private fun takePicture() {
     UiThreadUtil.runOnUiThread {
+        // Check if a countdown is already in progress
+        val existingCountdownView = frameLayout.findViewWithTag<TextView>("countdownTextView")
+        if (existingCountdownView != null) {
+            // A countdown is already running, skip creating a new one
+            return@runOnUiThread
+        }
+
         // Create a TextView for the countdown
         val countdownTextView = TextView(currentActivity).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -381,37 +388,37 @@ private fun takePicture() {
             }
             textSize = 48f
             setTextColor(Color.WHITE)
+            tag = "countdownTextView" // Assign a tag to identify it later
         }
 
         // Add the countdown TextView to the frameLayout
         frameLayout.addView(countdownTextView)
 
-        // Start a countdown from 4 to 1
-        var remainingTime = 4 // Initial countdown value
-
-        // Immediately update the countdown every second (without using postDelayed)
+        // Start a countdown from 3 to 1
         val countdownHandler = Handler()
-        
-        // Set up a loop to manually decrement the countdown
-        Thread {
-            while (remainingTime > 0) {
-                countdownHandler.post {
-                    countdownTextView.text = remainingTime.toString()
-                }
-                Thread.sleep(1000) // Wait for 1 second before updating the countdown
-                remainingTime--
-            }
-            // Countdown finished
-            countdownHandler.post {
-                frameLayout.removeView(countdownTextView)
-            }
+        var remainingTime = 3 // Countdown duration
 
-            // Immediately take the picture
-            captureSelfie()
-        }.start()
+        // Update the countdown every second
+        val countdownRunnable = object : Runnable {
+            override fun run() {
+                if (remainingTime > 0) {
+                    countdownTextView.text = remainingTime.toString()
+                    remainingTime--
+                    countdownHandler.postDelayed(this, 1000) // Update every 1 second
+                } else {
+                    // Countdown complete, remove the TextView
+                    frameLayout.removeView(countdownTextView)
+
+                    // Capture the selfie
+                    captureSelfie()
+                }
+            }
+        }
+
+        // Start the countdown
+        countdownHandler.post(countdownRunnable)
     }
 }
-
 
 
 private fun captureSelfie() {
@@ -427,6 +434,7 @@ private fun captureSelfie() {
         }
     }
 }
+
 
 private fun savePicture(bitmap: Bitmap) {
     try {
