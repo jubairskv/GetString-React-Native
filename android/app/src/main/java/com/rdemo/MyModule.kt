@@ -21,7 +21,6 @@ import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 
 class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
-
     private var cameraDevice: CameraDevice? = null
     private var cameraCaptureSession: CameraCaptureSession? = null
     private var backgroundHandler: Handler? = null
@@ -31,9 +30,137 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     private lateinit var textureView: TextureView
     private lateinit var overlayImageView: ImageView
     private var lastDetectionTime = 0L
-    private val detectionInterval = 1000L // Process every 1000ms (1 second)
+    private val detectionInterval = 500L // Process every 500ms for smoother detection
+    
+    private var headMovementTasks = mutableMapOf(
+        "Blink detected" to false,
+        "Head moved right" to false,
+        "Head moved left" to false
+    )
 
     override fun getName(): String = "MyModule"
+
+    private fun setupUI(activity: Activity) {
+        frameLayout = FrameLayout(activity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        textureView = TextureView(activity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        overlayImageView = ImageView(activity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        frameLayout.addView(textureView)
+        frameLayout.addView(overlayImageView)
+
+        activity.setContentView(frameLayout)
+    }
+
+    private fun startBackgroundThread() {
+        backgroundThread = HandlerThread("CameraBackground").also { it.start() }
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    private fun stopBackgroundThread() {
+        backgroundThread?.quitSafely()
+        try {
+            backgroundThread?.join()
+            backgroundThread = null
+            backgroundHandler = null
+        } catch (e: InterruptedException) {
+            Log.e("MyModule", "Error stopping background thread", e)
+        }
+    }
+
+    private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
+        try {
+            val cameraManager = currentActivity?.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            
+            // Find front camera
+            val cameraId = cameraManager.cameraIdList.find { id ->
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                facing == CameraCharacteristics.LENS_FACING_FRONT
+            } ?: cameraManager.cameraIdList[0]
+
+            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraDevice = camera
+                    createCameraPreviewSession(surfaceTexture, promise)
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                    cameraDevice = null
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    cameraDevice = null
+                    promise.reject("CAMERA_ERROR", "Failed to open camera: $error")
+                }
+            }, backgroundHandler)
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", "Failed to open camera: ${e.message}")
+        }
+    }
+
+    private fun createCameraPreviewSession(surfaceTexture: SurfaceTexture, promise: Promise) {
+        try {
+            val surface = Surface(surfaceTexture)
+            val previewRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            previewRequestBuilder.addTarget(surface)
+
+            cameraDevice!!.createCaptureSession(
+                listOf(surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        cameraCaptureSession = session
+                        try {
+                            session.setRepeatingRequest(
+                                previewRequestBuilder.build(),
+                                null,
+                                backgroundHandler
+                            )
+                            promise.resolve(null)
+                        } catch (e: CameraAccessException) {
+                            promise.reject("CAMERA_ERROR", "Failed to start camera preview: ${e.message}")
+                        }
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        promise.reject("CAMERA_ERROR", "Failed to configure camera session")
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", "Failed to create camera preview session: ${e.message}")
+        }
+    }
+
+    private fun stopCamera() {
+        try {
+            cameraCaptureSession?.close()
+            cameraCaptureSession = null
+            cameraDevice?.close()
+            cameraDevice = null
+        } catch (e: Exception) {
+            Log.e("MyModule", "Error stopping camera", e)
+        }
+    }
 
     @ReactMethod
     fun startCameraPreview(promise: Promise) {
@@ -61,129 +188,42 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                         if (currentTime - lastDetectionTime >= detectionInterval && !isDetectingFaces) {
                             isDetectingFaces = true
                             lastDetectionTime = currentTime
-                            detectFaces() // Detect faces only once per second
+                            detectFaces()
                         }
                     }
                 }
             } catch (e: Exception) {
-                promise.reject("Error", e.message)
+                promise.reject("CAMERA_ERROR", e.message)
             }
         }
-    }
-
-    private fun setupUI(activity: Activity) {
-        frameLayout = FrameLayout(activity)
-        textureView = TextureView(activity)
-        overlayImageView = ImageView(activity)
-
-        frameLayout.addView(textureView)
-        frameLayout.addView(overlayImageView)
-
-        activity.setContentView(frameLayout)
-        val layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        )
-        textureView.layoutParams = layoutParams
-        overlayImageView.layoutParams = layoutParams
-    }
-
-    private fun startBackgroundThread() {
-        backgroundThread = HandlerThread("CameraBackgroundThread").apply { start() }
-        backgroundHandler = Handler(backgroundThread!!.looper)
-    }
-
-    private fun stopBackgroundThread() {
-        backgroundThread?.quitSafely()
-        backgroundThread = null
-        backgroundHandler = null
-    }
-
-    private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
-        val cameraManager = currentActivity!!.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = cameraManager.cameraIdList[1] // Use front-facing camera if available
-
-        try {
-            Log.d("CameraModule", "Opening camera: $cameraId")
-            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
-                override fun onOpened(camera: CameraDevice) {
-                    Log.d("CameraModule", "Camera opened successfully.")
-                    cameraDevice = camera
-                    createCameraPreviewSession(surfaceTexture, promise)
-                }
-
-                override fun onDisconnected(camera: CameraDevice) {
-                    camera.close()
-                    cameraDevice = null
-                    Log.d("CameraModule", "Camera disconnected.")
-                }
-
-                override fun onError(camera: CameraDevice, error: Int) {
-                    promise.reject("CameraError", "Failed to open camera: $error")
-                    Log.e("CameraModule", "Error opening camera: $error")
-                }
-            }, backgroundHandler)
-        } catch (e: Exception) {
-            promise.reject("CameraError", "Error opening camera: ${e.message}")
-            Log.e("CameraModule", "Error opening camera: ${e.message}")
-        }
-    }
-
-    private fun createCameraPreviewSession(surfaceTexture: SurfaceTexture, promise: Promise) {
-        try {
-            val surface = Surface(surfaceTexture)
-            val previewRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-            previewRequestBuilder.addTarget(surface)
-
-            cameraDevice!!.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    cameraCaptureSession = session
-                    session.setRepeatingRequest(previewRequestBuilder.build(), null, backgroundHandler)
-                    Log.d("CameraModule", "Camera session configured successfully.")
-                    promise.resolve("Camera preview started successfully!")
-                }
-
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    promise.reject("CameraError", "Failed to configure camera session")
-                    Log.e("CameraModule", "Failed to configure camera session.")
-                }
-            }, backgroundHandler)
-        } catch (e: Exception) {
-            promise.reject("CameraError", "Failed to create preview session: ${e.message}")
-            Log.e("CameraModule", "Error creating camera session: ${e.message}")
-        }
-    }
-
-    private fun stopCamera() {
-        cameraCaptureSession?.close()
-        cameraCaptureSession = null
-        cameraDevice?.close()
-        cameraDevice = null
-        Log.d("CameraModule", "Camera stopped.")
     }
 
     private fun detectFaces() {
         backgroundHandler?.post {
             try {
                 val bitmap = textureView.bitmap ?: return@post
-                val downscaledBitmap = Bitmap.createScaledBitmap(bitmap, bitmap.width / 2, bitmap.height / 2, false)
-
-                // Create InputImage from the downscaled bitmap for better performance
-                val image = InputImage.fromBitmap(downscaledBitmap, 0)
+                val image = InputImage.fromBitmap(bitmap, 0)
 
                 val options = FaceDetectorOptions.Builder()
-                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST) // Use fast mode
+                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
                     .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
                     .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
                     .build()
 
                 val detector = FaceDetection.getClient(options)
 
-                Log.d("FaceDetection", "Starting face detection.")
                 detector.process(image)
                     .addOnSuccessListener { faces ->
-                        Log.d("FaceDetection", "Faces detected: ${faces.size}")
-                        drawFacesOnBitmap(bitmap, faces)
+                        if (faces.isEmpty()) {
+                            if (headMovementTasks.any { it.value }) {
+                                resetTasks()
+                                Log.d("FaceDetection", "Face lost - progress reset")
+                            }
+                        } else {
+                            val face = faces[0]
+                            processDetectedFace(face)
+                        }
+                        drawFacesOnOverlay(bitmap, faces)
                     }
                     .addOnFailureListener { e ->
                         Log.e("FaceDetection", "Face detection failed: ${e.message}")
@@ -196,43 +236,73 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         }
     }
 
-  private fun drawFacesOnBitmap(bitmap: Bitmap, faces: List<Face>) {
-    // Create a mutable bitmap so that we can draw on it
-    val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-    val canvas = Canvas(mutableBitmap)
+    private fun processDetectedFace(face: Face) {
+        val headEulerAngleY = face.headEulerAngleY
+        val leftEyeOpenProb = face.leftEyeOpenProbability ?: -1.0f
+        val rightEyeOpenProb = face.rightEyeOpenProbability ?: -1.0f
 
-    // Paint object for drawing the bounding box
-    val paint = Paint().apply {
-        color = Color.GREEN
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
+        when {
+            !headMovementTasks["Blink detected"]!! && 
+                    leftEyeOpenProb < 0.5 && rightEyeOpenProb < 0.5 -> {
+                updateTask("Blink detected")
+                Log.d("FaceDetection", "Blink detected")
+            }
+            headMovementTasks["Blink detected"]!! && 
+                    !headMovementTasks["Head moved right"]!! && 
+                    headEulerAngleY > 10 -> {
+                updateTask("Head moved right")
+                Log.d("FaceDetection", "Head turned right")
+            }
+            headMovementTasks["Head moved right"]!! && 
+                    !headMovementTasks["Head moved left"]!! && 
+                    headEulerAngleY < -10 -> {
+                updateTask("Head moved left")
+                Log.d("FaceDetection", "Head turned left")
+            }
+        }
     }
 
-    // Scale the bounding boxes to the original size if we scaled the bitmap before detection
-    val scaleX = textureView.width.toFloat() / bitmap.width
-    val scaleY = textureView.height.toFloat() / bitmap.height
-
-    for (face in faces) {
-        val bounds = face.boundingBox
-        // Scale the bounding box to fit the texture view size
-        val scaledBounds = Rect(
-            (bounds.left * scaleX).toInt(),
-            (bounds.top * scaleY).toInt(),
-            (bounds.right * scaleX).toInt(),
-            (bounds.bottom * scaleY).toInt()
-        )
-
-        // Draw the scaled bounding box on the canvas
-        canvas.drawRect(scaledBounds, paint)
+    private fun updateTask(taskName: String) {
+        headMovementTasks[taskName] = true
     }
 
-    // Set the updated bitmap (with bounding boxes) to the overlay image view
-    UiThreadUtil.runOnUiThread {
-        overlayImageView.setImageBitmap(mutableBitmap)
+    private fun resetTasks() {
+        headMovementTasks = headMovementTasks.mapValues { false }.toMutableMap()
     }
 
-    Log.d("FaceDetection", "Face bounding boxes drawn.")
-}
+    private fun drawFacesOnOverlay(bitmap: Bitmap, faces: List<Face>) {
+        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(mutableBitmap)
+        val paint = Paint().apply {
+            color = Color.GREEN
+            style = Paint.Style.STROKE
+            strokeWidth = 8f
+            textSize = 48f
+        }
 
+        for (face in faces) {
+            val bounds = face.boundingBox
+            
+            // Calculate scaled coordinates
+            val scaledLeft = bounds.left.toFloat()
+            val scaledTop = bounds.top.toFloat()
+            val scaledRight = bounds.right.toFloat()
+            val scaledBottom = bounds.bottom.toFloat()
 
+            // Draw face rectangle
+            canvas.drawRect(scaledLeft, scaledTop, scaledRight, scaledBottom, paint)
+
+            // Draw task status
+            var yOffset = scaledTop - 60f
+            headMovementTasks.forEach { (task, completed) ->
+                val status = if (completed) "✓" else "×"
+                canvas.drawText("$task: $status", scaledLeft, yOffset, paint)
+                yOffset -= 60f
+            }
+        }
+
+        UiThreadUtil.runOnUiThread {
+            overlayImageView.setImageBitmap(mutableBitmap)
+        }
+    }
 }
