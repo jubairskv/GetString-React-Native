@@ -7,10 +7,9 @@ import android.hardware.camera2.*
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
-import android.view.Gravity
-import android.view.Surface
-import android.view.TextureView
+import android.view.*
 import android.widget.FrameLayout
+import android.widget.ImageView
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -22,8 +21,11 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     private var cameraDevice: CameraDevice? = null
     private var cameraCaptureSession: CameraCaptureSession? = null
     private var backgroundHandler: Handler? = null
-    private var faceDetector: android.media.FaceDetector? = null
-    private var isDetectingFaces = false // To prevent redundant face detection calls
+    private var backgroundThread: HandlerThread? = null
+    private var isDetectingFaces = false
+    private lateinit var frameLayout: FrameLayout
+    private lateinit var textureView: TextureView
+    private lateinit var overlayImageView: ImageView
 
     override fun getName(): String = "MyModule"
 
@@ -31,43 +33,28 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     fun startCameraPreview(promise: Promise) {
         UiThreadUtil.runOnUiThread {
             try {
-                val currentActivity: Activity? = currentActivity
+                val currentActivity = currentActivity ?: throw Exception("No current activity")
+                setupUI(currentActivity)
 
-                if (currentActivity != null) {
-                    val frameLayout = FrameLayout(currentActivity)
-                    val textureView = TextureView(currentActivity)
-                    frameLayout.addView(textureView)
+                textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                        startBackgroundThread()
+                        openCamera(surfaceTexture, promise)
+                    }
 
-                    currentActivity.setContentView(frameLayout)  // Set the frame layout as the content view
+                    override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
+                    override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                        stopCamera()
+                        stopBackgroundThread()
+                        return true
+                    }
 
-                    // Set layout parameters
-                    val displayMetrics = currentActivity.resources.displayMetrics
-                    val layoutParams = FrameLayout.LayoutParams(displayMetrics.widthPixels, displayMetrics.heightPixels)
-                    layoutParams.gravity = Gravity.CENTER
-                    textureView.layoutParams = layoutParams
-
-                    // Set up TextureView listener
-                    textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                        override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
-                            startCamera(surfaceTexture, textureView, promise)
-                        }
-
-                        override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
-                        override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                            stopCamera()
-                            return true
-                        }
-
-                        override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {
-                            // Check if face detection is already in progress to avoid redundant processing
-                            if (!isDetectingFaces) {
-                                isDetectingFaces = true
-                                detectFaces(textureView)
-                            }
+                    override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {
+                        if (!isDetectingFaces) {
+                            isDetectingFaces = true
+                            detectFaces()
                         }
                     }
-                } else {
-                    promise.reject("ActivityError", "No activity found.")
                 }
             } catch (e: Exception) {
                 promise.reject("Error", e.message)
@@ -75,16 +62,39 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         }
     }
 
-    private fun startCamera(surfaceTexture: SurfaceTexture, textureView: TextureView, promise: Promise) {
-        val handlerThread = HandlerThread("CameraBackgroundThread")
-        handlerThread.start()
-        backgroundHandler = Handler(handlerThread.looper)
+    private fun setupUI(activity: Activity) {
+        frameLayout = FrameLayout(activity)
+        textureView = TextureView(activity)
+        overlayImageView = ImageView(activity)
+
+        frameLayout.addView(textureView)
+        frameLayout.addView(overlayImageView)
+
+        activity.setContentView(frameLayout)
+        val layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        textureView.layoutParams = layoutParams
+        overlayImageView.layoutParams = layoutParams
+    }
+
+    private fun startBackgroundThread() {
+        backgroundThread = HandlerThread("CameraBackgroundThread").apply { start() }
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    private fun stopBackgroundThread() {
+        backgroundThread?.quitSafely()
+        backgroundThread = null
+        backgroundHandler = null
+    }
+
+    private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
+        val cameraManager = currentActivity!!.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cameraId = cameraManager.cameraIdList[1]
 
         try {
-            val currentActivity = currentActivity ?: throw Exception("Activity not found")
-            val cameraManager = currentActivity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val cameraId = cameraManager.cameraIdList[1] // Use the back camera
-
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
                     cameraDevice = camera
@@ -92,7 +102,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
-                    cameraDevice?.close()
+                    camera.close()
                     cameraDevice = null
                 }
 
@@ -101,7 +111,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
-            promise.reject("CameraError", "Error starting camera: ${e.message}")
+            promise.reject("CameraError", "Error opening camera: ${e.message}")
         }
     }
 
@@ -114,12 +124,8 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
             cameraDevice!!.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     cameraCaptureSession = session
-                    try {
-                        session.setRepeatingRequest(previewRequestBuilder.build(), null, backgroundHandler)
-                        promise.resolve("Camera preview started successfully!")
-                    } catch (e: Exception) {
-                        promise.reject("CameraError", "Error during camera preview: ${e.message}")
-                    }
+                    session.setRepeatingRequest(previewRequestBuilder.build(), null, backgroundHandler)
+                    promise.resolve("Camera preview started successfully!")
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
@@ -136,39 +142,31 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         cameraCaptureSession = null
         cameraDevice?.close()
         cameraDevice = null
-        backgroundHandler?.looper?.thread?.interrupt()
-        backgroundHandler = null
     }
 
-    private fun detectFaces(textureView: TextureView) {
-        // Run face detection in a background thread
+    private fun detectFaces() {
         backgroundHandler?.post {
             try {
                 val bitmap = textureView.bitmap ?: return@post
-
-                // Convert bitmap to mutable format
                 val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
                 val canvas = Canvas(mutableBitmap)
-                val paint = Paint()
-                paint.color = Color.GREEN
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 5f
+                val paint = Paint().apply {
+                    color = Color.GREEN
+                    style = Paint.Style.STROKE
+                    strokeWidth = 5f
+                }
 
                 val maxFaces = 5
                 val faceDetector = android.media.FaceDetector(mutableBitmap.width, mutableBitmap.height, maxFaces)
                 val faces = arrayOfNulls<android.media.FaceDetector.Face>(maxFaces)
                 val faceCount = faceDetector.findFaces(mutableBitmap, faces)
 
-                Log.d("FaceDetection", "Detected $faceCount faces")
-
                 for (i in 0 until faceCount) {
                     val face = faces[i]
-                    if (face != null) {
+                    face?.let {
                         val midPoint = PointF()
-                        face.getMidPoint(midPoint)
-                        val eyesDistance = face.eyesDistance()
-
-                        // Draw green rectangle around the detected face
+                        it.getMidPoint(midPoint)
+                        val eyesDistance = it.eyesDistance()
                         canvas.drawRect(
                             midPoint.x - eyesDistance,
                             midPoint.y - eyesDistance,
@@ -176,21 +174,17 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                             midPoint.y + eyesDistance,
                             paint
                         )
-
-                        Log.d(
-                            "FaceDetection",
-                            "Face $i: Position=(${midPoint.x}, ${midPoint.y}), Confidence=${"%.2f".format(face.confidence())}"
-                        )
                     }
                 }
 
-                // Set the modified bitmap to the ImageView or handle UI update
-                // For example, create an ImageView and set its bitmap to mutableBitmap
+                UiThreadUtil.runOnUiThread {
+                    overlayImageView.setImageBitmap(mutableBitmap)
+                }
+            } catch (e: Exception) {
+                Log.e("FaceDetection", "Error detecting faces: ${e.message}")
             } finally {
-                // Ensure we reset face detection flag after completion
                 isDetectingFaces = false
             }
         }
     }
 }
-
