@@ -31,7 +31,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     private lateinit var textureView: TextureView
     private lateinit var overlayImageView: ImageView
     private var lastDetectionTime = 0L
-    private val detectionInterval = 500L // Process every 500ms
+    private val detectionInterval = 1000L // Process every 1000ms (1 second)
 
     override fun getName(): String = "MyModule"
 
@@ -49,6 +49,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                     }
 
                     override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
+
                     override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
                         stopCamera()
                         stopBackgroundThread()
@@ -60,7 +61,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                         if (currentTime - lastDetectionTime >= detectionInterval && !isDetectingFaces) {
                             isDetectingFaces = true
                             lastDetectionTime = currentTime
-                            detectFaces()
+                            detectFaces() // Detect faces only once per second
                         }
                     }
                 }
@@ -195,23 +196,43 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         }
     }
 
-    private fun drawFacesOnBitmap(bitmap: Bitmap, faces: List<Face>) {
-        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        val canvas = Canvas(mutableBitmap)
-        val paint = Paint().apply {
-            color = Color.GREEN
-            style = Paint.Style.STROKE
-            strokeWidth = 5f
-        }
+  private fun drawFacesOnBitmap(bitmap: Bitmap, faces: List<Face>) {
+    // Create a mutable bitmap so that we can draw on it
+    val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(mutableBitmap)
 
-        for (face in faces) {
-            val bounds = face.boundingBox
-            canvas.drawRect(bounds, paint)
-        }
-
-        UiThreadUtil.runOnUiThread {
-            overlayImageView.setImageBitmap(mutableBitmap)
-            Log.d("FaceDetection", "Face bounding boxes drawn.")
-        }
+    // Paint object for drawing the bounding box
+    val paint = Paint().apply {
+        color = Color.GREEN
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
     }
+
+    // Scale the bounding boxes to the original size if we scaled the bitmap before detection
+    val scaleX = textureView.width.toFloat() / bitmap.width
+    val scaleY = textureView.height.toFloat() / bitmap.height
+
+    for (face in faces) {
+        val bounds = face.boundingBox
+        // Scale the bounding box to fit the texture view size
+        val scaledBounds = Rect(
+            (bounds.left * scaleX).toInt(),
+            (bounds.top * scaleY).toInt(),
+            (bounds.right * scaleX).toInt(),
+            (bounds.bottom * scaleY).toInt()
+        )
+
+        // Draw the scaled bounding box on the canvas
+        canvas.drawRect(scaledBounds, paint)
+    }
+
+    // Set the updated bitmap (with bounding boxes) to the overlay image view
+    UiThreadUtil.runOnUiThread {
+        overlayImageView.setImageBitmap(mutableBitmap)
+    }
+
+    Log.d("FaceDetection", "Face bounding boxes drawn.")
+}
+
+
 }
