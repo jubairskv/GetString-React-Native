@@ -110,7 +110,9 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
-    implementation 'androidx.appcompat:appcompat:1.2.0' // Example for adding a library (AppCompat)
+    implementation "com.facebook.react:react-native:+" 
+    implementation "androidx.appcompat:appcompat:1.6.1" // For Android compatibility
+    implementation "androidx.annotation:annotation:1.6.0"
     
     // For Camera (Example: CameraX)
     implementation 'androidx.camera:camera-camera2:1.0.0'
