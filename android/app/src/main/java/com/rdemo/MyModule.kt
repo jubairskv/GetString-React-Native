@@ -2,6 +2,7 @@ package com.rdemo
 
 import android.app.Activity
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.*
 import android.hardware.camera2.*
 import android.os.Handler
@@ -10,6 +11,11 @@ import android.util.Log
 import android.view.*
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.TextView
+import android.view.Gravity
+import android.graphics.Color
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -40,6 +46,14 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         "Head moved left" to false
     )
     private var isPictureTaken = false
+
+     companion object {
+        private const val CAMERA_PERMISSION_REQUEST_CODE = 100
+    }
+
+    private var frameCounter = 0
+    private val frameUpdateFrequency = 10
+
 
     private lateinit var previewImageView: ImageView
     private lateinit var previewFrameLayout: FrameLayout
@@ -105,7 +119,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         }
     }
 
-    private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
+   private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
         try {
             val cameraManager = currentActivity?.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
@@ -114,7 +128,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                 val characteristics = cameraManager.getCameraCharacteristics(id)
                 val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
                 facing == CameraCharacteristics.LENS_FACING_FRONT
-            } ?: cameraManager.cameraIdList[0]
+            } ?: cameraManager.cameraIdList[1]
 
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
@@ -188,6 +202,13 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         UiThreadUtil.runOnUiThread {
             try {
                 val currentActivity = currentActivity ?: throw Exception("No current activity")
+
+                if (!hasCameraPermission(currentActivity)) {
+                    requestCameraPermission(currentActivity, CAMERA_PERMISSION_REQUEST_CODE)
+                    promise.reject("PERMISSION_ERROR", "Camera permission is not granted")
+                    return@runOnUiThread
+                }
+
                 setupUI(currentActivity)
 
                 textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -205,56 +226,67 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                     }
 
                     override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastDetectionTime >= detectionInterval && !isDetectingFaces) {
-                            isDetectingFaces = true
-                            lastDetectionTime = currentTime
-                            detectFaces()
-                        }
-                    }
+    val currentTime = System.currentTimeMillis()
+    if (frameCounter % frameUpdateFrequency == 0 &&
+        currentTime - lastDetectionTime >= detectionInterval && 
+        !isDetectingFaces) {
+        isDetectingFaces = true
+        lastDetectionTime = currentTime
+        detectFaces()
+    }
+    frameCounter++
+}
+
                 }
             } catch (e: Exception) {
                 promise.reject("CAMERA_ERROR", e.message)
             }
         }
     }
-
     private fun detectFaces() {
-        backgroundHandler?.post {
-            try {
-                val bitmap = textureView.bitmap ?: return@post
-                val image = InputImage.fromBitmap(bitmap, 0)
+    backgroundHandler?.post {
+        try {
+            val bitmap = textureView.bitmap ?: return@post
+            val image = InputImage.fromBitmap(bitmap, 0)
 
-                val options = FaceDetectorOptions.Builder()
-                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-                    .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-                    .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-                    .build()
+            val options = FaceDetectorOptions.Builder()
+                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+                .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+                .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+                .build()
 
-                val detector = FaceDetection.getClient(options)
+            val detector = FaceDetection.getClient(options)
 
-                detector.process(image)
-                    .addOnSuccessListener { faces ->
-                        if (faces.isEmpty()) {
-                            if (headMovementTasks.any { it.value }) {
-                                resetTasks()
-                                Log.d("FaceDetection", "Face lost - progress reset")
-                            }
-                        } else {
-                            val face = faces[0]
-                            processDetectedFace(face)
+            detector.process(image)
+                .addOnSuccessListener { faces ->
+                    if (faces.isEmpty()) {
+                        if (headMovementTasks.any { it.value }) {
+                            resetTasks()
+                            Log.d("FaceDetection", "Face lost - progress reset")
                         }
-                        drawFacesOnOverlay(bitmap, faces)
+                    } else {
+                        val face = faces[0]
+                        processDetectedFace(face)
                     }
-                    .addOnFailureListener { e ->
-                        Log.e("FaceDetection", "Face detection failed: ${e.message}")
-                    }
-            } catch (e: Exception) {
-                Log.e("FaceDetection", "Error detecting faces: ${e.message}")
-            } finally {
-                isDetectingFaces = false
-            }
+                    drawFacesOnOverlay(faces) // Pass only the faces list
+                }
+                .addOnFailureListener { e ->
+                    Log.e("FaceDetection", "Face detection failed: ${e.message}")
+                }
+        } catch (e: Exception) {
+            Log.e("FaceDetection", "Error detecting faces: ${e.message}")
+        } finally {
+            isDetectingFaces = false
         }
+    }
+}
+
+     private fun hasCameraPermission(context: Context): Boolean {
+        return ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestCameraPermission(activity: Activity, requestCode: Int) {
+        ActivityCompat.requestPermissions(activity, arrayOf(android.Manifest.permission.CAMERA), requestCode)
     }
 
     private fun processDetectedFace(face: Face) {
@@ -291,65 +323,107 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         headMovementTasks = headMovementTasks.mapValues { false }.toMutableMap()
     }
 
-    private fun drawFacesOnOverlay(bitmap: Bitmap, faces: List<Face>) {
-        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        val canvas = Canvas(mutableBitmap)
-        val paint = Paint().apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 8f
-            textSize = 48f
-        }
-
-        for (face in faces) {
-            val bounds = face.boundingBox
-
-            // Calculate scaled coordinates
-            val scaledLeft = bounds.left.toFloat()
-            val scaledTop = bounds.top.toFloat()
-            val scaledRight = bounds.right.toFloat()
-            val scaledBottom = bounds.bottom.toFloat()
-
-            // Draw face rectangle
-            paint.color = Color.GREEN // Green color for face rectangle
-            canvas.drawRect(scaledLeft, scaledTop, scaledRight, scaledBottom, paint)
-
-            // Draw task status (initially red, then green when completed)
-            var yOffset = scaledTop - 60f
-            headMovementTasks.forEach { (task, completed) ->
-                paint.color = if (completed) Color.GREEN else Color.RED // Green if completed, red if not
-                val status = if (completed) "✓" else "×"
-                canvas.drawText("$task: $status", scaledLeft, yOffset, paint)
-                yOffset -= 60f
-            }
-        }
-
-        UiThreadUtil.runOnUiThread {
-            overlayImageView.setImageBitmap(mutableBitmap)
-        }
-
-        // Take the picture if all tasks are completed
-        if (!isPictureTaken && headMovementTasks.all { it.value }) {
-            takePicture()
-        }
-    }
-
-   private fun takePicture() {
-      // Post a delayed task to take a picture after 4 seconds
-    backgroundHandler?.postDelayed({
+    private fun drawFacesOnOverlay(faces: List<Face>) {
+    backgroundHandler?.post {
         try {
-            val bitmap = textureView.bitmap
-            bitmap?.let {
-                savePicture(bitmap)
-                // Now pass the saved file to showInPreview
-                val file = File(currentActivity?.filesDir, "capturedPhoto.jpg")
-                showInPreview(file) // Pass the file here
-                isPictureTaken = true
+            // Clear existing overlays
+            val mutableBitmap = Bitmap.createBitmap(
+                overlayImageView.width,
+                overlayImageView.height,
+                Bitmap.Config.ARGB_8888
+            )
+            val canvas = Canvas(mutableBitmap)
+            val paint = Paint().apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 8f
+                textSize = 48f
+            }
+
+            // Draw detected faces
+            for (face in faces) {
+                val bounds = face.boundingBox
+
+                paint.color = Color.GREEN
+                canvas.drawRect(bounds, paint)
+
+                // Draw task statuses
+                var yOffset = bounds.top.toFloat() - 60f
+                headMovementTasks.forEach { (task, completed) ->
+                    paint.color = if (completed) Color.GREEN else Color.RED
+                    canvas.drawText("$task: ${if (completed) "✓" else "×"}", bounds.left.toFloat(), yOffset, paint)
+                    yOffset -= 60f
+                }
+            }
+
+            // Update overlay image view on UI thread
+            UiThreadUtil.runOnUiThread {
+                overlayImageView.setImageBitmap(mutableBitmap)
+            }
+
+            // Trigger picture capture if tasks are completed
+            if (!isPictureTaken && headMovementTasks.all { it.value }) {
+                takePicture()
             }
         } catch (e: Exception) {
-            Log.e("Picture", "Error taking picture: ${e.message}")
+            Log.e("FaceOverlay", "Error drawing face overlay: ${e.message}")
         }
-    }, 1000) // 1 seconds delay (4000 milliseconds)
+    }
 }
+
+   private fun takePicture() {
+    UiThreadUtil.runOnUiThread {
+        // Create a TextView for the countdown
+        val countdownTextView = TextView(currentActivity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+            textSize = 48f
+            setTextColor(Color.WHITE)
+        }
+
+        // Add the countdown TextView to the frameLayout
+        frameLayout.addView(countdownTextView)
+
+        // Start a countdown from 4 to 1
+        val countdownDuration = 4000L // 4 seconds
+        val interval = 1000L // 1 second
+        val startTime = System.currentTimeMillis()
+
+        val countdownHandler = Handler()
+        val countdownRunnable = object : Runnable {
+            override fun run() {
+                val elapsedTime = System.currentTimeMillis() - startTime
+                val remainingTime = (countdownDuration - elapsedTime) / 1000
+                if (remainingTime >= 0) {
+                   countdownTextView.text = remainingTime.toString()
+                    countdownHandler.postDelayed(this, interval)
+                } else {
+                    // Remove the countdown TextView after the countdown finishes
+                    frameLayout.removeView(countdownTextView)
+
+                    // Take the picture
+                    backgroundHandler?.post {
+                        try {
+                            val bitmap = textureView.bitmap
+                            bitmap?.let {
+                                savePicture(bitmap)
+                                isPictureTaken = true
+                            }
+                        } catch (e: Exception) {
+                            Log.e("Picture", "Error taking picture: ${e.message}")
+                        }
+                    }
+                }
+            }
+        }
+
+        countdownHandler.post(countdownRunnable)
+    }
+}
+
 
 private fun savePicture(bitmap: Bitmap) {
     try {

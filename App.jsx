@@ -11,7 +11,7 @@ const App = () => {
     try {
       const response = await MyModule.startCameraPreview();
       setIsCameraLaunched(true);
-      Alert.alert('Success', response);
+      // Alert.alert('Success', response);
     } catch (error) {
       setIsCameraLaunched(false);
       Alert.alert('Error', error.message);
