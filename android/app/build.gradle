@@ -115,9 +115,15 @@ dependencies {
     implementation "androidx.annotation:annotation:1.6.0"
     implementation 'com.google.mlkit:face-detection:16.1.7'
     
+    
     // For Camera (Example: CameraX)
     implementation 'androidx.camera:camera-camera2:1.0.0'
     implementation 'androidx.camera:camera-lifecycle:1.0.0'
+    //camera x implementation:
+    implementation "androidx.camera:camera-core:1.1.0"
+    implementation "androidx.camera:camera-camera2:1.1.0"
+    implementation "androidx.camera:camera-lifecycle:1.1.0"
+    implementation "androidx.camera:camera-view:1.0.0-alpha10"
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
