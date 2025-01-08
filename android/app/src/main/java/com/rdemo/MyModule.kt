@@ -30,6 +30,9 @@ import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.io.File
 import java.io.FileOutputStream
 
+
+
+
 class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private var cameraDevice: CameraDevice? = null
     private var cameraCaptureSession: CameraCaptureSession? = null
