@@ -124,6 +124,8 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
         setColor(Color.parseColor("#FF4081"))  // Same color as background
         cornerRadius = 30f  // Adjust this value to control the roundness
     }
+
+    
 }
 
     // Set the background color to a light black color
@@ -134,6 +136,8 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 }
 
 
+
+
     frameLayout.addView(textureView)
     frameLayout.addView(overlayImageView)
     frameLayout.addView(instructionTextView)
@@ -141,7 +145,81 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
     activity.setContentView(frameLayout)
 
+
+     //Inside your setupUI function, add a click listener to the captureButton
+captureButton.setOnClickListener {
+    captureImage()
+}
+
     }
+
+
+    // Method to capture the image
+private fun captureImage() {
+    if (cameraDevice == null) {
+        Toast.makeText(currentActivity, "Camera is not initialized", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    try {
+        // Set up the capture request
+        val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+        val surface = Surface(textureView.surfaceTexture)
+
+        // Add the surface to the capture request
+        captureRequestBuilder.addTarget(surface)
+
+        // Set capture settings (optional, like focusing or orientation)
+        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+
+        // Capture the image
+        cameraDevice!!.createCaptureSession(
+            listOf(surface),
+            object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    // Capture the image when session is configured
+                    try {
+                        session.capture(captureRequestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
+                            override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                                super.onCaptureCompleted(session, request, result)
+                                // Handle the captured image (e.g., save to file, process, etc.)
+                                saveCapturedImage(session)
+                            }
+                        }, backgroundHandler)
+                    } catch (e: CameraAccessException) {
+                        Log.e("CameraModule", "Failed to capture image: ${e.message}")
+                    }
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    Log.e("CameraModule", "Failed to configure camera session for capture")
+                }
+            },
+            backgroundHandler
+        )
+    } catch (e: Exception) {
+        Log.e("CameraModule", "Error capturing image: ${e.message}")
+    }
+}
+
+// Method to save the captured image
+private fun saveCapturedImage(session: CameraCaptureSession) {
+    try {
+        // Here you can save the image to a file or process it further
+        val photoFile = File(currentActivity?.getExternalFilesDir(null), "captured_image.jpg")
+        val outputStream = FileOutputStream(photoFile)
+
+        // Process the captured image (e.g., save it to outputStream)
+        // Use a suitable ImageWriter or image processing library to save the image data
+
+        outputStream.flush()
+        outputStream.close()
+
+        Toast.makeText(currentActivity, "Image Captured and Saved", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        Log.e("CameraModule", "Error saving image: ${e.message}")
+    }
+}
 
     // Start background thread to handle camera operations
     private fun startBackgroundThread() {
@@ -242,49 +320,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
         }
     }
 
-    // Take a photo and save it to a file
-    private fun takePicture(promise: Promise) {
-        try {
-            val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-
-            val surface = Surface(textureView.surfaceTexture)
-            captureRequestBuilder.addTarget(surface)
-
-            val file = File(currentActivity?.filesDir, "captured_photo.jpg")
-            val outputStream = FileOutputStream(file)
-
-            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, 90) // Adjust orientation
-
-            cameraCaptureSession?.capture(
-                captureRequestBuilder.build(),
-                object : CameraCaptureSession.CaptureCallback() {
-                    override fun onCaptureCompleted(
-                        session: CameraCaptureSession,
-                        request: CaptureRequest,
-                        result: TotalCaptureResult
-                    ) {
-                        super.onCaptureCompleted(session, request, result)
-                        outputStream.flush()
-                        outputStream.close()
-                        promise.resolve("Photo captured successfully: ${file.absolutePath}")
-                    }
-
-                    override fun onCaptureFailed(
-                        session: CameraCaptureSession,
-                        request: CaptureRequest,
-                        failure: CaptureFailure
-                    ) {
-                        super.onCaptureFailed(session, request, failure)
-                        promise.reject("CAMERA_ERROR", "Failed to capture photo")
-                    }
-                },
-                backgroundHandler
-            )
-        } catch (e: Exception) {
-            promise.reject("CAMERA_ERROR", "Failed to capture photo: ${e.message}")
-        }
-    }
-
+ 
     // Expose the method to React Native to start camera preview
     @ReactMethod
     fun startCameraPreview(promise: Promise) {
@@ -312,22 +348,6 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
                 }
             } catch (e: Exception) {
                 promise.reject("CAMERA_ERROR", e.message)
-            }
-        }
-    }
-
-    // Expose the method to React Native to capture a photo
-    @ReactMethod
-    fun takePhoto(promise: Promise) {
-        UiThreadUtil.runOnUiThread {
-            try {
-                if (cameraDevice != null) {
-                    takePicture(promise)
-                } else {
-                    promise.reject("CAMERA_ERROR", "Camera is not opened")
-                }
-            } catch (e: Exception) {
-                promise.reject("CAMERA_ERROR", "Failed to take photo: ${e.message}")
             }
         }
     }
