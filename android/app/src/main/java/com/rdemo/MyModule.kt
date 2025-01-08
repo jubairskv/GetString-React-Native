@@ -29,7 +29,320 @@ import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import java.io.File
 import java.io.FileOutputStream
+import android.Manifest
+import android.os.Bundle
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import com.facebook.react.bridge.Callback
+import com.facebook.react.bridge.ActivityEventListener
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.view.Surface
+import android.widget.Button
 
+
+
+class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+    private var cameraDevice: CameraDevice? = null
+    private var cameraCaptureSession: CameraCaptureSession? = null
+    private var backgroundHandler: Handler? = null
+    private var backgroundThread: HandlerThread? = null
+    private lateinit var frameLayout: FrameLayout
+    private lateinit var textureView: TextureView
+    private lateinit var overlayImageView: ImageView
+    private lateinit var instructionTextView: TextView
+    private lateinit var captureButton: Button
+
+    companion object {
+        private const val CAMERA_PERMISSION_REQUEST_CODE = 100
+    }
+
+    override fun getName(): String = "CameraModule"
+
+    // Set up the UI elements like TextureView for camera preview
+    private fun setupUI(activity: Activity) {
+        frameLayout = FrameLayout(activity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        textureView = TextureView(activity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        overlayImageView = ImageView(activity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+    instructionTextView = TextView(activity).apply {
+    text = "Take a Picture of Front side of ID Card"
+    textSize = 22f
+    setTextColor(Color.WHITE)
+    gravity = Gravity.CENTER
+    layoutParams = FrameLayout.LayoutParams(
+        900,
+        FrameLayout.LayoutParams.WRAP_CONTENT
+    ).apply {
+        gravity = Gravity.TOP // Adjust to position the text
+        topMargin = 80 // Adjust margin to position text above controls
+        leftMargin = 100  // Optional: Adjust left margin to give some spacing
+        rightMargin = 50
+    }
+    // Add horizontal padding to instruction text
+        setPadding(50, 0, 50, 0)  // Adjust padding as per your requirement
+
+
+     // Add Capture Button
+    captureButton = Button(activity).apply {
+    text = "Capture Front ID"
+    setBackgroundColor(Color.parseColor("#FF4081")) // Customize button color
+    setTextColor(Color.WHITE)
+    textSize = 18f
+
+    // Set the layout parameters for full width and bottom alignment
+    layoutParams = FrameLayout.LayoutParams(
+        800,  // Full width
+        FrameLayout.LayoutParams.WRAP_CONTENT  // Wrap content for height
+    ).apply {
+        gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL  // Align at the bottom with centered text
+        bottomMargin = 50  // Set some margin from the bottom
+    }
+
+    setPadding(50, 0, 50, 0) 
+
+    // Set rounded corners
+    background = GradientDrawable().apply {
+        setColor(Color.parseColor("#FF4081"))  // Same color as background
+        cornerRadius = 30f  // Adjust this value to control the roundness
+    }
+}
+
+    // Set the background color to a light black color
+    background = GradientDrawable().apply {
+        setColor(Color.parseColor("#66000000")) // Light black background (semi-transparent black)
+        cornerRadius = 16f // Set the corner radius
+    }
+}
+
+
+    frameLayout.addView(textureView)
+    frameLayout.addView(overlayImageView)
+    frameLayout.addView(instructionTextView)
+    frameLayout.addView(captureButton)
+
+    activity.setContentView(frameLayout)
+
+    }
+
+    // Start background thread to handle camera operations
+    private fun startBackgroundThread() {
+        backgroundThread = HandlerThread("CameraBackground").also { it.start() }
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    // Stop the background thread
+    private fun stopBackgroundThread() {
+        backgroundThread?.quitSafely()
+        try {
+            backgroundThread?.join()
+            backgroundThread = null
+            backgroundHandler = null
+        } catch (e: InterruptedException) {
+            Log.e("CameraModule", "Error stopping background thread", e)
+        }
+    }
+
+    // Open the camera and start the preview session
+    private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
+        try {
+            val cameraManager = currentActivity?.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+            // Find front camera
+            val cameraId = cameraManager.cameraIdList.find { id ->
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                facing == CameraCharacteristics.LENS_FACING_BACK // Use front camera
+            } ?: cameraManager.cameraIdList[0] // Default to first camera if front camera not found
+
+            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraDevice = camera
+                    createCameraPreviewSession(surfaceTexture, promise)
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                    cameraDevice = null
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    cameraDevice = null
+                    promise.reject("CAMERA_ERROR", "Failed to open camera: $error")
+                }
+            }, backgroundHandler)
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", "Failed to open camera: ${e.message}")
+        }
+    }
+
+    // Create camera preview session
+    private fun createCameraPreviewSession(surfaceTexture: SurfaceTexture, promise: Promise) {
+        try {
+            val surface = Surface(surfaceTexture)
+            val previewRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            previewRequestBuilder.addTarget(surface)
+
+            cameraDevice!!.createCaptureSession(
+                listOf(surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        cameraCaptureSession = session
+                        try {
+                            session.setRepeatingRequest(
+                                previewRequestBuilder.build(),
+                                null,
+                                backgroundHandler
+                            )
+                            promise.resolve(null)
+                        } catch (e: CameraAccessException) {
+                            promise.reject("CAMERA_ERROR", "Failed to start camera preview: ${e.message}")
+                        }
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        promise.reject("CAMERA_ERROR", "Failed to configure camera session")
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", "Failed to create camera preview session: ${e.message}")
+        }
+    }
+
+    // Stop the camera session and release resources
+    private fun stopCamera() {
+        try {
+            cameraCaptureSession?.close()
+            cameraCaptureSession = null
+            cameraDevice?.close()
+            cameraDevice = null
+        } catch (e: Exception) {
+            Log.e("CameraModule", "Error stopping camera", e)
+        }
+    }
+
+    // Take a photo and save it to a file
+    private fun takePicture(promise: Promise) {
+        try {
+            val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+
+            val surface = Surface(textureView.surfaceTexture)
+            captureRequestBuilder.addTarget(surface)
+
+            val file = File(currentActivity?.filesDir, "captured_photo.jpg")
+            val outputStream = FileOutputStream(file)
+
+            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, 90) // Adjust orientation
+
+            cameraCaptureSession?.capture(
+                captureRequestBuilder.build(),
+                object : CameraCaptureSession.CaptureCallback() {
+                    override fun onCaptureCompleted(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        result: TotalCaptureResult
+                    ) {
+                        super.onCaptureCompleted(session, request, result)
+                        outputStream.flush()
+                        outputStream.close()
+                        promise.resolve("Photo captured successfully: ${file.absolutePath}")
+                    }
+
+                    override fun onCaptureFailed(
+                        session: CameraCaptureSession,
+                        request: CaptureRequest,
+                        failure: CaptureFailure
+                    ) {
+                        super.onCaptureFailed(session, request, failure)
+                        promise.reject("CAMERA_ERROR", "Failed to capture photo")
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", "Failed to capture photo: ${e.message}")
+        }
+    }
+
+    // Expose the method to React Native to start camera preview
+    @ReactMethod
+    fun startCameraPreview(promise: Promise) {
+        UiThreadUtil.runOnUiThread {
+            try {
+                val currentActivity = currentActivity ?: throw Exception("No current activity")
+
+                setupUI(currentActivity)
+
+                textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                        startBackgroundThread()
+                        openCamera(surfaceTexture, promise)
+                    }
+
+                    override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
+
+                    override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                        stopCamera()
+                        stopBackgroundThread()
+                        return true
+                    }
+
+                    override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
+                }
+            } catch (e: Exception) {
+                promise.reject("CAMERA_ERROR", e.message)
+            }
+        }
+    }
+
+    // Expose the method to React Native to capture a photo
+    @ReactMethod
+    fun takePhoto(promise: Promise) {
+        UiThreadUtil.runOnUiThread {
+            try {
+                if (cameraDevice != null) {
+                    takePicture(promise)
+                } else {
+                    promise.reject("CAMERA_ERROR", "Camera is not opened")
+                }
+            } catch (e: Exception) {
+                promise.reject("CAMERA_ERROR", "Failed to take photo: ${e.message}")
+            }
+        }
+    }
+
+    // Check if the app has camera permissions
+    private fun hasCameraPermission(activity: Activity): Boolean {
+        // Implement permission check logic here
+        return true
+    }
+
+    // Request camera permission if not granted
+    private fun requestCameraPermission(activity: Activity, requestCode: Int) {
+        // Implement permission request logic here
+    }
+}
 
 
 

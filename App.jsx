@@ -2,16 +2,14 @@ import React, {useState} from 'react';
 import {View, Button, Alert, Text, StyleSheet} from 'react-native';
 import {NativeModules} from 'react-native';
 
-const {MyModule} = NativeModules;
-
-
+const {CameraModule} = NativeModules;
 
 const App = () => {
   const [isCameraLaunched, setIsCameraLaunched] = useState(false);
 
   const launchCamera = async () => {
     try {
-      const response = await MyModule.startCameraPreview();
+      const response = await CameraModule.startCameraPreview();
       setIsCameraLaunched(true);
       // Alert.alert('Success', response);
     } catch (error) {
