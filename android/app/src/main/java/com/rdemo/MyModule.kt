@@ -11,6 +11,7 @@ import android.os.HandlerThread
 import android.util.Log
 import android.view.*
 import android.widget.FrameLayout
+import android.graphics.drawable.GradientDrawable
 import android.widget.ImageView
 import android.widget.TextView
 import android.view.Gravity
@@ -295,6 +296,8 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     }
 }
 
+
+
 // Helper function to calculate center proximity
 private fun calculateCenterProximity(bounds: Rect): Int {
     val screenWidth = overlayImageView.width
@@ -418,7 +421,32 @@ private fun drawFacesOnOverlay(faces: List<Face>) {
     }
 }
 private fun takePicture() {
-    UiThreadUtil.runOnUiThread {   
+    UiThreadUtil.runOnUiThread {
+        // Show "Taking selfie..." text above the countdown
+        val takingSelfieTextView = TextView(currentActivity).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM // Center horizontally, align to bottom
+                bottomMargin = 1200 // Adjust the bottom margin to position it above the countdown
+            }
+            textSize = 24f
+            setTextColor(Color.WHITE)
+            text = "Taking selfie"
+
+            // Set background with border radius
+            val drawable = GradientDrawable().apply {
+                setColor(Color.BLACK) // Black background
+                cornerRadius = 30f // Border radius
+            }
+            background = drawable
+            setPadding(20, 10, 20, 10) // Padding for the text inside the rounded box
+        }
+
+        // Add the "Taking selfie..." text to the frameLayout
+        frameLayout.addView(takingSelfieTextView)
+
         // Check if a countdown is already in progress
         val existingCountdownView = frameLayout.findViewWithTag<TextView>("countdownTextView")
         if (existingCountdownView != null) {
@@ -432,11 +460,19 @@ private fun takePicture() {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.CENTER
+                gravity = Gravity.CENTER // Center the countdown text horizontally and vertically
             }
             textSize = 48f
             setTextColor(Color.WHITE)
             tag = "countdownTextView" // Assign a tag to identify it later
+
+            // Set background with border radius for countdown
+            val drawable = GradientDrawable().apply {
+                setColor(Color.BLACK) // Black background
+                cornerRadius = 30f // Border radius
+            }
+            background = drawable
+            setPadding(40, 20, 40, 20) // Padding for the countdown text inside the rounded box
         }
 
         // Add the countdown TextView to the frameLayout
@@ -454,7 +490,8 @@ private fun takePicture() {
                     remainingTime--
                     countdownHandler.postDelayed(this, 1000) // Update every 1 second
                 } else {
-                    // Countdown complete, remove the TextView
+                    // Countdown complete, remove the "Taking selfie..." text and countdown TextView
+                    frameLayout.removeView(takingSelfieTextView)
                     frameLayout.removeView(countdownTextView)
 
                     // Capture the selfie
@@ -467,6 +504,8 @@ private fun takePicture() {
         countdownHandler.post(countdownRunnable)
     }
 }
+
+
 
 
 private fun captureSelfie() {
