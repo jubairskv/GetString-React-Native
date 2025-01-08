@@ -351,11 +351,12 @@ private fun calculateCenterProximity(bounds: Rect): Int {
 
     // Additional checks and actions outside the `when` block
     if (!headMovementTasks["Blink detected"]!!) {
-        showToasty("Please close your eyes for a second")
+        Toast.makeText(currentActivity, "Please close your eyes for a second", Toast.LENGTH_SHORT).show()
     } else if (!headMovementTasks["Head moved right"]!!) {
-        showToasty("Please turn your head to the right")
+        Toast.makeText(currentActivity, "Please turn your head to the right", Toast.LENGTH_SHORT).show()
+
     } else if (!headMovementTasks["Head moved left"]!!) {
-        showToasty("Please turn your head to the left")
+        Toast.makeText(currentActivity, "Please turn your head to the left", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -560,11 +561,6 @@ private fun showInPreview(file: File) {
     }
 }
 
-private fun showToasty(message: String) {
-    UiThreadUtil.runOnUiThread {
-        Toast.makeText(currentActivity, message, Toast.LENGTH_SHORT).show()
-    }
-}
 
 
 }

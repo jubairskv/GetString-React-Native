@@ -4,6 +4,8 @@ import {NativeModules} from 'react-native';
 
 const {MyModule} = NativeModules;
 
+
+
 const App = () => {
   const [isCameraLaunched, setIsCameraLaunched] = useState(false);
 
