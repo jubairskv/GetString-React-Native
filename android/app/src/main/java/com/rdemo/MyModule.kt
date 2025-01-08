@@ -265,11 +265,24 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                             resetTasks()
                             Log.d("FaceDetection", "Face lost - progress reset")
                         }
+                        // Clear overlay when no faces are detected
+                        drawFacesOnOverlay(emptyList())
                     } else {
-                        val face = faces[0]
-                        processDetectedFace(face)
+                        // Filter to get the primary face
+                        val primaryFace = faces.maxByOrNull { face ->
+                            val size = face.boundingBox.width() * face.boundingBox.height()
+                            val centerDistance = calculateCenterProximity(face.boundingBox)
+                            // Combine size and proximity; larger size and closer center get higher priority
+                            size - centerDistance
+                        }
+
+                        if (primaryFace != null) {
+                            processDetectedFace(primaryFace)
+                            drawFacesOnOverlay(listOf(primaryFace)) // Pass only the primary face
+                        } else {
+                            drawFacesOnOverlay(emptyList()) // Handle edge case
+                        }
                     }
-                    drawFacesOnOverlay(faces) // Pass only the faces list
                 }
                 .addOnFailureListener { e ->
                     Log.e("FaceDetection", "Face detection failed: ${e.message}")
@@ -280,6 +293,20 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
             isDetectingFaces = false
         }
     }
+}
+
+// Helper function to calculate center proximity
+private fun calculateCenterProximity(bounds: Rect): Int {
+    val screenWidth = overlayImageView.width
+    val screenHeight = overlayImageView.height
+    val centerX = screenWidth / 2
+    val centerY = screenHeight / 2
+
+    val faceCenterX = bounds.centerX()
+    val faceCenterY = bounds.centerY()
+
+    return (faceCenterX - centerX) * (faceCenterX - centerX) +
+           (faceCenterY - centerY) * (faceCenterY - centerY)
 }
 
      private fun hasCameraPermission(context: Context): Boolean {
@@ -335,7 +362,8 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
         headMovementTasks = headMovementTasks.mapValues { false }.toMutableMap()
     }
 
-    private fun drawFacesOnOverlay(faces: List<Face>) {
+   // Update the drawFacesOnOverlay function
+private fun drawFacesOnOverlay(faces: List<Face>) {
     backgroundHandler?.post {
         try {
             // Clear existing overlays
@@ -349,6 +377,14 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
                 style = Paint.Style.STROKE
                 strokeWidth = 8f
                 textSize = 48f
+            }
+
+            if (faces.isEmpty()) {
+                // Clear the overlay when no faces are detected
+                UiThreadUtil.runOnUiThread {
+                    overlayImageView.setImageBitmap(null)
+                }
+                return@post
             }
 
             // Draw detected faces
