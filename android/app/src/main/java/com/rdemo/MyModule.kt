@@ -388,7 +388,7 @@ private fun captureImage() {
                                     Log.d("CameraModule", "Captured image in base64: $base64Image")
 
                                     // Handle the image as needed (e.g., process it or save it)
-                                    // saveAndLogCapturedImage(base64Image)
+                                     saveAndLogCapturedImage(base64Image)
 
                                     // Close the image to release resources
                                     image.close()
@@ -447,10 +447,14 @@ private fun saveAndLogCapturedImage(base64Image: String) {
         }
         Log.d("CameraModule", "Image saved successfully to: ${imageFile.absolutePath}")
 
-        // Pass both the file path and base64 data to React Native
+        // Log the image file name for reference
+        Log.d("CameraModule", "Image file name: $imageFileName")  // Log image file name
+
+        // Pass the file path, file name, and base64 data to React Native
         val params: WritableMap = Arguments.createMap().apply {
             putString("imageData", base64Image)
             putString("imagePath", imageFile.absolutePath)
+            putString("imageFileName", imageFileName) // Include the image file name
         }
 
         // Emit the image data to React Native
@@ -460,8 +464,8 @@ private fun saveAndLogCapturedImage(base64Image: String) {
 
         // Show Toast to notify the user (optional)
         Toast.makeText(
-            currentActivity, 
-            "Image saved to ${imageFile.absolutePath}", 
+            currentActivity,
+            "Image saved to ${imageFile.absolutePath}",
             Toast.LENGTH_SHORT
         ).show()
 
@@ -474,6 +478,8 @@ private fun saveAndLogCapturedImage(base64Image: String) {
         ).show()
     }
 }
+
+
 
 
 
