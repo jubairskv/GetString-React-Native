@@ -124,6 +124,11 @@ dependencies {
     implementation 'com.github.GrenderG:Toasty:1.5.2'
 
 
+    implementation "com.squareup.okhttp3:okhttp:4.11.0" // OkHttp Client
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3" // Coroutines
+    implementation "com.squareup.okio:okio:3.5.0" // OkHttp helper library
+
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

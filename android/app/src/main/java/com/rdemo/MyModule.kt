@@ -54,6 +54,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.os.Environment
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import kotlinx.coroutines.*
+
 
 
 class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
@@ -379,6 +384,8 @@ private fun captureImage() {
                                     val buffer = image.planes[0].buffer
                                     val byteArray = ByteArray(buffer.remaining())
                                     buffer.get(byteArray)
+                                    // Call the function to send the image to the API
+                                    sendImageToApi(byteArray)
 
                                     // Log the byte array of the JPEG image (this can be large, so be cautious about logging large data)
                                     Log.d("CameraModule", "Captured image byte array: ${byteArray.joinToString(", ")}")
@@ -388,7 +395,7 @@ private fun captureImage() {
                                     Log.d("CameraModule", "Captured image in base64: $base64Image")
 
                                     // Handle the image as needed (e.g., process it or save it)
-                                     saveAndLogCapturedImage(base64Image)
+                                    saveAndLogCapturedImage(base64Image)
 
                                     // Close the image to release resources
                                     image.close()
@@ -411,6 +418,48 @@ private fun captureImage() {
         )
     } catch (e: Exception) {
         Log.e("CameraModule", "Error capturing image: ${e.message}")
+    }
+}
+
+
+private fun sendImageToApi(byteArray: ByteArray) {
+    val client = OkHttpClient()
+    val mediaType = "image/jpeg".toMediaType()
+    val requestBody = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart(
+            "file", // Form field name
+            "image.jpg", // File name
+            byteArray.toRequestBody(mediaType) // Byte array as the file content
+        )
+        .build()
+
+    val request = Request.Builder()
+        .url("https://api-innovitegra.online/crop-aadhar-card/") // Replace with your API endpoint
+        .post(requestBody)
+        .build()
+
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val responseBody = response.body?.string()
+                Log.d("APIResponse", "Image uploaded successfully: $responseBody")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(currentActivity, "Image uploaded successfully!", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Log.e("APIResponse", "Failed to upload image: ${response.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(currentActivity, "Failed to upload image: ${response.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("APIResponse", "Error uploading image: ${e.message}")
+            withContext(Dispatchers.Main) {
+                Toast.makeText(currentActivity, "Error uploading image", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 }
 
@@ -478,6 +527,7 @@ private fun saveAndLogCapturedImage(base64Image: String) {
         ).show()
     }
 }
+
 
 
 
