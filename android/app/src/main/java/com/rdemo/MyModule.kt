@@ -40,11 +40,18 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.view.Surface
 import android.widget.Button
+import android.util.Size
+import android.media.Image
+import android.media.ImageReader
+import android.util.Base64
+
+
 
 
 
 class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private var cameraDevice: CameraDevice? = null
+    private lateinit var surface: Surface
     private var cameraCaptureSession: CameraCaptureSession? = null
     private var backgroundHandler: Handler? = null
     private var backgroundThread: HandlerThread? = null
@@ -60,7 +67,6 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
     override fun getName(): String = "CameraModule"
 
-    // Set up the UI elements like TextureView for camera preview
     private fun setupUI(activity: Activity) {
         frameLayout = FrameLayout(activity).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -83,244 +89,80 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
             )
         }
 
-    instructionTextView = TextView(activity).apply {
-    text = "Take a Picture of Front side of ID Card"
-    textSize = 22f
-    setTextColor(Color.WHITE)
-    gravity = Gravity.CENTER
-    layoutParams = FrameLayout.LayoutParams(
-        900,
-        FrameLayout.LayoutParams.WRAP_CONTENT
-    ).apply {
-        gravity = Gravity.TOP // Adjust to position the text
-        topMargin = 80 // Adjust margin to position text above controls
-        leftMargin = 100  // Optional: Adjust left margin to give some spacing
-        rightMargin = 50
-    }
-    // Add horizontal padding to instruction text
-        setPadding(50, 0, 50, 0)  // Adjust padding as per your requirement
+        instructionTextView = TextView(activity).apply {
+            text = "Take a Picture of Front side of ID Card"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#b9b9b9"))
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(
+                900,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP
+                topMargin = 80
+                leftMargin = 100
+                rightMargin = 50
+            }
+            setPadding(50, 0, 50, 0)
+        background = GradientDrawable().apply {
+                setColor(Color.parseColor("#b9b9b9"))
+                cornerRadius = 30f
+            }
+        }
 
+        captureButton = Button(activity).apply {
+            text = "Capture Front ID"
+            setBackgroundColor(Color.parseColor("#FF4081"))
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            layoutParams = FrameLayout.LayoutParams(
+                800,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = 50
+            }
+            setPadding(50, 0, 50, 0)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FF4081"))
+                cornerRadius = 30f
+            }
+        }
 
-     // Add Capture Button
-    captureButton = Button(activity).apply {
-    text = "Capture Front ID"
-    setBackgroundColor(Color.parseColor("#FF4081")) // Customize button color
-    setTextColor(Color.WHITE)
-    textSize = 18f
-
-    // Set the layout parameters for full width and bottom alignment
-    layoutParams = FrameLayout.LayoutParams(
-        800,  // Full width
-        FrameLayout.LayoutParams.WRAP_CONTENT  // Wrap content for height
-    ).apply {
-        gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL  // Align at the bottom with centered text
-        bottomMargin = 50  // Set some margin from the bottom
-    }
-
-    setPadding(50, 0, 50, 0) 
-
-    // Set rounded corners
-    background = GradientDrawable().apply {
-        setColor(Color.parseColor("#FF4081"))  // Same color as background
-        cornerRadius = 30f  // Adjust this value to control the roundness
-    }
-
-    
-}
-
-    // Set the background color to a light black color
-    background = GradientDrawable().apply {
-        setColor(Color.parseColor("#66000000")) // Light black background (semi-transparent black)
-        cornerRadius = 16f // Set the corner radius
-    }
-}
-
-
-
-
-    frameLayout.addView(textureView)
-    frameLayout.addView(overlayImageView)
-    frameLayout.addView(instructionTextView)
-    frameLayout.addView(captureButton)
-
-    activity.setContentView(frameLayout)
-
-
-     //Inside your setupUI function, add a click listener to the captureButton
-captureButton.setOnClickListener {
-    captureImage()
-}
-
-    }
-
-
-    // Method to capture the image
-private fun captureImage() {
-    if (cameraDevice == null) {
-        Toast.makeText(currentActivity, "Camera is not initialized", Toast.LENGTH_SHORT).show()
-        return
-    }
-
-    try {
-        // Set up the capture request
-        val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-        val surface = Surface(textureView.surfaceTexture)
-
-        // Add the surface to the capture request
-        captureRequestBuilder.addTarget(surface)
-
-        // Set capture settings (optional, like focusing or orientation)
-        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-
-        // Capture the image
-        cameraDevice!!.createCaptureSession(
-            listOf(surface),
-            object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    // Capture the image when session is configured
-                    try {
-                        session.capture(captureRequestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
-                            override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
-                                super.onCaptureCompleted(session, request, result)
-                                // Handle the captured image (e.g., save to file, process, etc.)
-                                saveCapturedImage(session)
-                            }
-                        }, backgroundHandler)
-                    } catch (e: CameraAccessException) {
-                        Log.e("CameraModule", "Failed to capture image: ${e.message}")
-                    }
-                }
-
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    Log.e("CameraModule", "Failed to configure camera session for capture")
-                }
-            },
-            backgroundHandler
-        )
-    } catch (e: Exception) {
-        Log.e("CameraModule", "Error capturing image: ${e.message}")
-    }
-}
-
-// Method to save the captured image
-private fun saveCapturedImage(session: CameraCaptureSession) {
-    try {
-        // Here you can save the image to a file or process it further
-        val photoFile = File(currentActivity?.getExternalFilesDir(null), "captured_image.jpg")
-        val outputStream = FileOutputStream(photoFile)
-
-        // Process the captured image (e.g., save it to outputStream)
-        // Use a suitable ImageWriter or image processing library to save the image data
-
-        outputStream.flush()
-        outputStream.close()
-
-        Toast.makeText(currentActivity, "Image Captured and Saved", Toast.LENGTH_SHORT).show()
-    } catch (e: Exception) {
-        Log.e("CameraModule", "Error saving image: ${e.message}")
-    }
-}
-
-    // Start background thread to handle camera operations
-    private fun startBackgroundThread() {
-        backgroundThread = HandlerThread("CameraBackground").also { it.start() }
-        backgroundHandler = Handler(backgroundThread!!.looper)
-    }
-
-    // Stop the background thread
-    private fun stopBackgroundThread() {
-        backgroundThread?.quitSafely()
-        try {
-            backgroundThread?.join()
-            backgroundThread = null
-            backgroundHandler = null
-        } catch (e: InterruptedException) {
-            Log.e("CameraModule", "Error stopping background thread", e)
+        /// Add white border box at the center
+        val borderBox = View(activity).apply {
+        // Set width to 700 and height to maintain a 4:3 aspect ratio
+        layoutParams = FrameLayout.LayoutParams(
+            700, // Width of the border box
+            (700 * 3) / 4 // Height calculated for a 4:3 aspect ratio
+        ).apply {
+            gravity = Gravity.CENTER // Center it in the parent layout
+        }
+        // Create a transparent background with a white border
+        background = GradientDrawable().apply {
+            setColor(Color.TRANSPARENT) // Transparent background
+            setStroke(4, Color.WHITE)  // White border with 4dp thickness
+            cornerRadius = 16f         // Optional: Rounded corners
         }
     }
 
-    // Open the camera and start the preview session
-    private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
-        try {
-            val cameraManager = currentActivity?.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
-            // Find front camera
-            val cameraId = cameraManager.cameraIdList.find { id ->
-                val characteristics = cameraManager.getCameraCharacteristics(id)
-                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-                facing == CameraCharacteristics.LENS_FACING_BACK // Use front camera
-            } ?: cameraManager.cameraIdList[0] // Default to first camera if front camera not found
+        frameLayout.addView(textureView)
+        frameLayout.addView(overlayImageView)
+        frameLayout.addView(borderBox) // Add the white box to the layout
+        frameLayout.addView(instructionTextView)
+        frameLayout.addView(captureButton)
 
-            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
-                override fun onOpened(camera: CameraDevice) {
-                    cameraDevice = camera
-                    createCameraPreviewSession(surfaceTexture, promise)
-                }
+        activity.setContentView(frameLayout)
 
-                override fun onDisconnected(camera: CameraDevice) {
-                    camera.close()
-                    cameraDevice = null
-                }
-
-                override fun onError(camera: CameraDevice, error: Int) {
-                    camera.close()
-                    cameraDevice = null
-                    promise.reject("CAMERA_ERROR", "Failed to open camera: $error")
-                }
-            }, backgroundHandler)
-        } catch (e: Exception) {
-            promise.reject("CAMERA_ERROR", "Failed to open camera: ${e.message}")
+        // Inside your setupUI function, add a click listener to the captureButton
+        captureButton.setOnClickListener {
+            captureImage()
         }
     }
 
-    // Create camera preview session
-    private fun createCameraPreviewSession(surfaceTexture: SurfaceTexture, promise: Promise) {
-        try {
-            val surface = Surface(surfaceTexture)
-            val previewRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-            previewRequestBuilder.addTarget(surface)
 
-            cameraDevice!!.createCaptureSession(
-                listOf(surface),
-                object : CameraCaptureSession.StateCallback() {
-                    override fun onConfigured(session: CameraCaptureSession) {
-                        cameraCaptureSession = session
-                        try {
-                            session.setRepeatingRequest(
-                                previewRequestBuilder.build(),
-                                null,
-                                backgroundHandler
-                            )
-                            promise.resolve(null)
-                        } catch (e: CameraAccessException) {
-                            promise.reject("CAMERA_ERROR", "Failed to start camera preview: ${e.message}")
-                        }
-                    }
-
-                    override fun onConfigureFailed(session: CameraCaptureSession) {
-                        promise.reject("CAMERA_ERROR", "Failed to configure camera session")
-                    }
-                },
-                backgroundHandler
-            )
-        } catch (e: Exception) {
-            promise.reject("CAMERA_ERROR", "Failed to create camera preview session: ${e.message}")
-        }
-    }
-
-    // Stop the camera session and release resources
-    private fun stopCamera() {
-        try {
-            cameraCaptureSession?.close()
-            cameraCaptureSession = null
-            cameraDevice?.close()
-            cameraDevice = null
-        } catch (e: Exception) {
-            Log.e("CameraModule", "Error stopping camera", e)
-        }
-    }
-
- 
     // Expose the method to React Native to start camera preview
     @ReactMethod
     fun startCameraPreview(promise: Promise) {
@@ -351,6 +193,258 @@ private fun saveCapturedImage(session: CameraCaptureSession) {
             }
         }
     }
+
+
+    // Open the camera and start the preview session
+    private fun openCamera(surfaceTexture: SurfaceTexture, promise: Promise) {
+        try {
+            val cameraManager = currentActivity?.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+            // Find the back camera (use front camera if preferred)
+            val cameraId = cameraManager.cameraIdList.find { id ->
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                facing == CameraCharacteristics.LENS_FACING_BACK // Use back camera
+            } ?: cameraManager.cameraIdList[0] // Default to first camera if back camera not found
+
+            // Get the camera characteristics
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            
+            // Get the best resolution for the selected camera
+            val bestResolution = getCameraResolution(cameraManager, cameraId)
+
+            // Modify the height to reduce the preview size while maintaining aspect ratio
+            val reducedHeight = bestResolution.height / 4  // Reducing the height (adjust as needed)
+            val adjustedWidth = bestResolution.width * reducedHeight / bestResolution.height
+
+            // Set the SurfaceTexture to the modified resolution
+            surfaceTexture.setDefaultBufferSize(adjustedWidth, reducedHeight)
+
+            // Get the device rotation (screen orientation)
+            val rotation = currentActivity?.windowManager?.defaultDisplay?.rotation ?: 0
+            val degrees = when (rotation) {
+                Surface.ROTATION_0 -> 0
+                Surface.ROTATION_90 -> 90
+                Surface.ROTATION_180 -> 180
+                Surface.ROTATION_270 -> 270
+                else -> 0
+            }
+
+            // Get the camera's sensor orientation and lens facing
+            val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
+
+            // Calculate the display orientation based on device rotation and camera orientation
+            val displayOrientation = if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+                // Front-facing camera: Adjust orientation by adding the sensor orientation and device rotation
+                (sensorOrientation + degrees) % 360
+            } else {
+                // Back-facing camera: Adjust orientation by subtracting the device rotation from the sensor orientation
+                (sensorOrientation - degrees + 360) % 360
+            }
+
+            // Open the camera and start the preview session
+            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraDevice = camera
+
+                    // Create the camera preview session
+                    createCameraPreviewSession(surfaceTexture, displayOrientation, promise)
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                    cameraDevice = null
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    cameraDevice = null
+                    promise.reject("CAMERA_ERROR", "Failed to open camera: $error")
+                }
+            }, backgroundHandler)
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", "Failed to open camera: ${e.message}")
+        }
+    }
+
+
+    // Select the best resolution available for the camera
+    private fun getCameraResolution(cameraManager: CameraManager, cameraId: String): Size {
+        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+        // Check if the map is not null and get the supported output sizes for the camera
+        val sizes = map?.getOutputSizes(SurfaceTexture::class.java) ?: emptyArray()
+
+        // Select the largest resolution available
+        val bestResolution = sizes.maxByOrNull { it.width * it.height }
+        return bestResolution ?: Size(1920, 1080)  // Default resolution if no best resolution found
+    }
+
+
+
+    
+    // Create the camera preview session
+    private fun createCameraPreviewSession(surfaceTexture: SurfaceTexture, displayOrientation: Int, promise: Promise) {
+        try {
+            val surface = Surface(surfaceTexture)
+
+            // Create the CaptureRequest for the preview
+            val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            captureRequestBuilder.addTarget(surface)
+
+            // Set the orientation of the camera output
+            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, displayOrientation)
+
+            // Create the camera capture session
+            cameraDevice!!.createCaptureSession(
+                listOf(surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        try {
+                            session.setRepeatingRequest(captureRequestBuilder.build(), null, backgroundHandler)
+                            promise.resolve("Camera preview started successfully")
+                        } catch (e: CameraAccessException) {
+                            promise.reject("CAMERA_ERROR", "Failed to start preview session: ${e.message}")
+                        }
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        promise.reject("CAMERA_ERROR", "Failed to configure camera session")
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", "Failed to create preview session: ${e.message}")
+        }
+    }
+
+
+
+    // Method to capture the image
+    private fun captureImage() {
+        if (cameraDevice == null) {
+            Toast.makeText(currentActivity, "Camera is not initialized", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            // Set up the capture request
+            val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            val surface = Surface(textureView.surfaceTexture)
+
+            // Add the surface to the capture request
+            captureRequestBuilder.addTarget(surface)
+
+            // Set capture settings (optional, like focusing or orientation)
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+
+            // Create an ImageReader to capture the image
+            val imageReader = ImageReader.newInstance(1920, 1080, ImageFormat.JPEG, 1) // Adjust resolution if needed
+
+            // Set the ImageReader surface as a target for the capture
+            captureRequestBuilder.addTarget(imageReader.surface)
+
+            // Capture the image
+            cameraDevice!!.createCaptureSession(
+                listOf(surface, imageReader.surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        // Capture the image when session is configured
+                        try {
+                            session.capture(captureRequestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
+                                override fun onCaptureCompleted(
+                                    session: CameraCaptureSession, 
+                                    request: CaptureRequest, 
+                                    result: TotalCaptureResult
+                                ) {
+                                    super.onCaptureCompleted(session, request, result)
+                                    // Handle the captured image
+                                    val image = imageReader.acquireLatestImage()
+                                    if (image != null) {
+                                        // Save and log the captured image
+                                        saveAndLogCapturedImage(image)
+                                        image.close()
+                                    }
+                                }
+                            }, backgroundHandler)
+                        } catch (e: CameraAccessException) {
+                            Log.e("CameraModule", "Failed to capture image: ${e.message}")
+                        }
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        Log.e("CameraModule", "Failed to configure camera session for capture")
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: Exception) {
+            Log.e("CameraModule", "Error capturing image: ${e.message}")
+        }
+    }
+
+    // Method to save and log the captured image as a JPEG file
+    private fun saveAndLogCapturedImage(image: Image) {
+    try {
+    // Get image data from the image buffer
+    val planes = image.planes
+    val buffer = planes[0].buffer
+    val bytes = ByteArray(buffer.remaining())
+    buffer.get(bytes)
+
+    // Save image as a JPEG file
+    val photoFile = File(currentActivity?.getExternalFilesDir(null), "captured_image.jpg")
+    val outputStream = FileOutputStream(photoFile)
+    outputStream.write(bytes)
+    outputStream.flush()
+    outputStream.close()
+
+    // Log the file path of the saved image
+    Log.d("CameraModule", "Captured image saved at: ${photoFile.absolutePath}")
+
+    // Show Toast to notify the user
+    Toast.makeText(currentActivity, "Image Captured and Saved", Toast.LENGTH_SHORT).show()
+
+    } catch (e: Exception) {
+    Log.e("CameraModule", "Error saving and logging image: ${e.message}")
+    }
+    }
+
+
+    // Start background thread to handle camera operations
+    private fun startBackgroundThread() {
+        backgroundThread = HandlerThread("CameraBackground").also { it.start() }
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    // Stop the background thread
+    private fun stopBackgroundThread() {
+        backgroundThread?.quitSafely()
+        try {
+            backgroundThread?.join()
+            backgroundThread = null
+            backgroundHandler = null
+        } catch (e: InterruptedException) {
+            Log.e("CameraModule", "Error stopping background thread", e)
+        }
+    }
+
+
+    // Stop the camera session and release resources
+    private fun stopCamera() {
+        try {
+            cameraCaptureSession?.close()
+            cameraCaptureSession = null
+            cameraDevice?.close()
+            cameraDevice = null
+        } catch (e: Exception) {
+            Log.e("CameraModule", "Error stopping camera", e)
+        }
+    }
+
+    
 
     // Check if the app has camera permissions
     private fun hasCameraPermission(activity: Activity): Boolean {
