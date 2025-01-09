@@ -8,7 +8,6 @@ import android.widget.Toast
 import android.hardware.camera2.*
 import android.os.Handler
 import android.os.HandlerThread
-import android.util.Log
 import android.view.*
 import android.widget.FrameLayout
 import android.graphics.drawable.GradientDrawable
@@ -19,7 +18,6 @@ import android.graphics.Color
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Promise
-import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.UiThreadUtil
@@ -44,9 +42,18 @@ import android.util.Size
 import android.media.Image
 import android.media.ImageReader
 import android.util.Base64
-
-
-
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Log
+import java.io.ByteArrayOutputStream
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.WritableMap
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import android.os.Environment
 
 
 class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
@@ -322,95 +329,155 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
 
 
-    // Method to capture the image
-    private fun captureImage() {
-        if (cameraDevice == null) {
-            Toast.makeText(currentActivity, "Camera is not initialized", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        try {
-            // Set up the capture request
-            val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
-            val surface = Surface(textureView.surfaceTexture)
-
-            // Add the surface to the capture request
-            captureRequestBuilder.addTarget(surface)
-
-            // Set capture settings (optional, like focusing or orientation)
-            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-
-            // Create an ImageReader to capture the image
-            val imageReader = ImageReader.newInstance(1920, 1080, ImageFormat.JPEG, 1) // Adjust resolution if needed
-
-            // Set the ImageReader surface as a target for the capture
-            captureRequestBuilder.addTarget(imageReader.surface)
-
-            // Capture the image
-            cameraDevice!!.createCaptureSession(
-                listOf(surface, imageReader.surface),
-                object : CameraCaptureSession.StateCallback() {
-                    override fun onConfigured(session: CameraCaptureSession) {
-                        // Capture the image when session is configured
-                        try {
-                            session.capture(captureRequestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
-                                override fun onCaptureCompleted(
-                                    session: CameraCaptureSession, 
-                                    request: CaptureRequest, 
-                                    result: TotalCaptureResult
-                                ) {
-                                    super.onCaptureCompleted(session, request, result)
-                                    // Handle the captured image
-                                    val image = imageReader.acquireLatestImage()
-                                    if (image != null) {
-                                        // Save and log the captured image
-                                        saveAndLogCapturedImage(image)
-                                        image.close()
-                                    }
-                                }
-                            }, backgroundHandler)
-                        } catch (e: CameraAccessException) {
-                            Log.e("CameraModule", "Failed to capture image: ${e.message}")
-                        }
-                    }
-
-                    override fun onConfigureFailed(session: CameraCaptureSession) {
-                        Log.e("CameraModule", "Failed to configure camera session for capture")
-                    }
-                },
-                backgroundHandler
-            )
-        } catch (e: Exception) {
-            Log.e("CameraModule", "Error capturing image: ${e.message}")
-        }
+private fun captureImage() {
+    if (cameraDevice == null) {
+        Toast.makeText(currentActivity, "Camera is not initialized", Toast.LENGTH_SHORT).show()
+        Log.e("CameraModule", "Camera is not initialized")
+        return
     }
 
-    // Method to save and log the captured image as a JPEG file
-    private fun saveAndLogCapturedImage(image: Image) {
     try {
-    // Get image data from the image buffer
-    val planes = image.planes
-    val buffer = planes[0].buffer
-    val bytes = ByteArray(buffer.remaining())
-    buffer.get(bytes)
+        // Set up the capture request
+        val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+        val surface = Surface(textureView.surfaceTexture)
 
-    // Save image as a JPEG file
-    val photoFile = File(currentActivity?.getExternalFilesDir(null), "captured_image.jpg")
-    val outputStream = FileOutputStream(photoFile)
-    outputStream.write(bytes)
-    outputStream.flush()
-    outputStream.close()
+        // Add the surface to the capture request
+        captureRequestBuilder.addTarget(surface)
 
-    // Log the file path of the saved image
-    Log.d("CameraModule", "Captured image saved at: ${photoFile.absolutePath}")
+        // Set capture settings (optional, like focusing or orientation)
+        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
 
-    // Show Toast to notify the user
-    Toast.makeText(currentActivity, "Image Captured and Saved", Toast.LENGTH_SHORT).show()
+        // Create an ImageReader to capture the image
+        val imageReader = ImageReader.newInstance(1920, 1080, ImageFormat.JPEG, 1) // Adjust resolution if needed
+        Log.d("CameraModule", "ImageReader created with resolution: 1920x1080")
+
+        // Set the ImageReader surface as a target for the capture
+        captureRequestBuilder.addTarget(imageReader.surface)
+
+        // Capture the image
+        cameraDevice!!.createCaptureSession(
+            listOf(surface, imageReader.surface),
+            object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    // Capture the image when session is configured
+                    try {
+                        session.capture(captureRequestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
+                            override fun onCaptureCompleted(
+                                session: CameraCaptureSession, 
+                                request: CaptureRequest, 
+                                result: TotalCaptureResult
+                            ) {
+                                super.onCaptureCompleted(session, request, result)
+                                Log.d("CameraModule", "Capture completed, processing the image")
+
+                                // Handle the captured image
+                                val image = imageReader.acquireLatestImage()
+                                if (image != null) {
+                                    Log.d("CameraModule", "Captured image: $image")
+
+                                    // Extract image byte data
+                                    val buffer = image.planes[0].buffer
+                                    val byteArray = ByteArray(buffer.remaining())
+                                    buffer.get(byteArray)
+
+                                    // Log the byte array of the JPEG image (this can be large, so be cautious about logging large data)
+                                    Log.d("CameraModule", "Captured image byte array: ${byteArray.joinToString(", ")}")
+
+                                    // Optionally, you could convert to base64 for logging or further use
+                                    val base64Image = Base64.encodeToString(byteArray, Base64.DEFAULT)
+                                    Log.d("CameraModule", "Captured image in base64: $base64Image")
+
+                                    // Handle the image as needed (e.g., process it or save it)
+                                    // saveAndLogCapturedImage(base64Image)
+
+                                    // Close the image to release resources
+                                    image.close()
+                                    Log.d("CameraModule", "Image closed")
+                                } else {
+                                    Log.e("CameraModule", "Failed to acquire image")
+                                }
+                            }
+                        }, backgroundHandler)
+                    } catch (e: CameraAccessException) {
+                        Log.e("CameraModule", "Failed to capture image: ${e.message}")
+                    }
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    Log.e("CameraModule", "Failed to configure camera session for capture")
+                }
+            },
+            backgroundHandler
+        )
+    } catch (e: Exception) {
+        Log.e("CameraModule", "Error capturing image: ${e.message}")
+    }
+}
+
+
+
+private fun saveAndLogCapturedImage(base64Image: String) {
+    try {
+        // Log the captured base64 image (optional)
+        Log.d("CameraModule", "Captured image in base64: $base64Image")
+
+        // Convert base64 to bitmap
+        val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
+        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+        // Log the size of the image in bytes
+        Log.d("CameraModule", "Decoded image byte array size: ${imageBytes.size} bytes")
+
+        // Create a unique filename with timestamp
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val imageFileName = "JPEG_${timeStamp}.jpg"
+        Log.d("CameraModule", "Generated image file name: $imageFileName")
+
+        // Get the pictures directory
+        val storageDir = reactApplicationContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        Log.d("CameraModule", "Storage directory: ${storageDir?.absolutePath}")
+
+        val imageFile = File(storageDir, imageFileName)
+        Log.d("CameraModule", "Image file path: ${imageFile.absolutePath}")
+
+        // Save the bitmap as JPEG
+        FileOutputStream(imageFile).use { fos ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
+            fos.flush()
+        }
+        Log.d("CameraModule", "Image saved successfully to: ${imageFile.absolutePath}")
+
+        // Pass both the file path and base64 data to React Native
+        val params: WritableMap = Arguments.createMap().apply {
+            putString("imageData", base64Image)
+            putString("imagePath", imageFile.absolutePath)
+        }
+
+        // Emit the image data to React Native
+        reactApplicationContext
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("ImageCaptured", params)
+
+        // Show Toast to notify the user (optional)
+        Toast.makeText(
+            currentActivity, 
+            "Image saved to ${imageFile.absolutePath}", 
+            Toast.LENGTH_SHORT
+        ).show()
 
     } catch (e: Exception) {
-    Log.e("CameraModule", "Error saving and logging image: ${e.message}")
+        Log.e("CameraModule", "Error capturing and saving image: ${e.message}")
+        Toast.makeText(
+            currentActivity,
+            "Failed to save image: ${e.message}",
+            Toast.LENGTH_SHORT
+        ).show()
     }
-    }
+}
+
+
+
+    
 
 
     // Start background thread to handle camera operations
