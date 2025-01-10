@@ -395,7 +395,7 @@ private fun captureImage() {
                                     Log.d("CameraModule", "Captured image in base64: $base64Image")
 
                                     // Handle the image as needed (e.g., process it or save it)
-                                    saveAndLogCapturedImage(base64Image)
+                                   // saveAndLogCapturedImage(base64Image)
 
                                     // Close the image to release resources
                                     image.close()
@@ -423,6 +423,14 @@ private fun captureImage() {
 
 
 private fun sendImageToApi(byteArray: ByteArray) {
+
+     // Log the byte array size to ensure it is being passed correctly
+    Log.d("sendImageToApi", "Byte array size: ${byteArray.size} bytes")
+
+    // Optionally, log a portion of the byte array to see the data (e.g., first 100 bytes)
+    Log.d("sendImageToApi", "First 100 bytes of byte array: ${byteArray.take(100)}")
+
+
     val client = OkHttpClient()
     val mediaType = "image/jpeg".toMediaType()
     val requestBody = MultipartBody.Builder()
@@ -462,78 +470,6 @@ private fun sendImageToApi(byteArray: ByteArray) {
         }
     }
 }
-
-
-
-private fun saveAndLogCapturedImage(base64Image: String) {
-    try {
-        // Log the captured base64 image (optional)
-        Log.d("CameraModule", "Captured image in base64: $base64Image")
-
-        // Convert base64 to bitmap
-        val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
-        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-
-        // Log the size of the image in bytes
-        Log.d("CameraModule", "Decoded image byte array size: ${imageBytes.size} bytes")
-
-        // Create a unique filename with timestamp
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val imageFileName = "JPEG_${timeStamp}.jpg"
-        Log.d("CameraModule", "Generated image file name: $imageFileName")
-
-        // Get the pictures directory
-        val storageDir = reactApplicationContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-        Log.d("CameraModule", "Storage directory: ${storageDir?.absolutePath}")
-
-        val imageFile = File(storageDir, imageFileName)
-        Log.d("CameraModule", "Image file path: ${imageFile.absolutePath}")
-
-        // Save the bitmap as JPEG
-        FileOutputStream(imageFile).use { fos ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
-            fos.flush()
-        }
-        Log.d("CameraModule", "Image saved successfully to: ${imageFile.absolutePath}")
-
-        // Log the image file name for reference
-        Log.d("CameraModule", "Image file name: $imageFileName")  // Log image file name
-
-        // Pass the file path, file name, and base64 data to React Native
-        val params: WritableMap = Arguments.createMap().apply {
-            putString("imageData", base64Image)
-            putString("imagePath", imageFile.absolutePath)
-            putString("imageFileName", imageFileName) // Include the image file name
-        }
-
-        // Emit the image data to React Native
-        reactApplicationContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit("ImageCaptured", params)
-
-        // Show Toast to notify the user (optional)
-        Toast.makeText(
-            currentActivity,
-            "Image saved to ${imageFile.absolutePath}",
-            Toast.LENGTH_SHORT
-        ).show()
-
-    } catch (e: Exception) {
-        Log.e("CameraModule", "Error capturing and saving image: ${e.message}")
-        Toast.makeText(
-            currentActivity,
-            "Failed to save image: ${e.message}",
-            Toast.LENGTH_SHORT
-        ).show()
-    }
-}
-
-
-
-
-
-
-    
 
 
     // Start background thread to handle camera operations
