@@ -42,7 +42,6 @@ import android.util.Size
 import android.media.Image
 import android.media.ImageReader
 import android.util.Base64
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import java.io.ByteArrayOutputStream
@@ -58,6 +57,10 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import kotlinx.coroutines.*
+import android.graphics.Bitmap
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
 
 
 
