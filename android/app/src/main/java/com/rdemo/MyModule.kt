@@ -454,7 +454,7 @@ private fun sendImageToApi(byteArray: ByteArray) {
         try {
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                val responseBody = response.body?.string()
+                val responseBody = response.body?.bytes()
                 Log.d("APIResponse", "Image uploaded successfully: $responseBody")
                 withContext(Dispatchers.Main) {
                     Toast.makeText(currentActivity, "Image uploaded successfully!", Toast.LENGTH_SHORT).show()
