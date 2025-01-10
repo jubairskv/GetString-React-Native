@@ -82,7 +82,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
     override fun getName(): String = "CameraModule"
 
-    private fun setupUI(activity: Activity) {
+    private fun setupUI(activity: Activity, promise: Promise) {
         frameLayout = FrameLayout(activity).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -173,7 +173,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
         // Inside your setupUI function, add a click listener to the captureButton
         captureButton.setOnClickListener {
-            captureImage()
+            captureImage(promise)
         }
     }
 
@@ -185,7 +185,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
             try {
                 val currentActivity = currentActivity ?: throw Exception("No current activity")
 
-                setupUI(currentActivity)
+                setupUI(currentActivity,promise)
 
                 textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
@@ -337,7 +337,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
 
 
-private fun captureImage() {
+private fun captureImage(promise: Promise) {
     if (cameraDevice == null) {
         Toast.makeText(currentActivity, "Camera is not initialized", Toast.LENGTH_SHORT).show()
         Log.e("CameraModule", "Camera is not initialized")
@@ -388,7 +388,7 @@ private fun captureImage() {
                                     val byteArray = ByteArray(buffer.remaining())
                                     buffer.get(byteArray)
                                     // Call the function to send the image to the API
-                                    sendImageToApi(byteArray)
+                                    sendImageToApi(byteArray,promise)
 
                                     // Log the byte array of the JPEG image (this can be large, so be cautious about logging large data)
                                     Log.d("CameraModule", "Captured image byte array: ${byteArray.joinToString(", ")}")
@@ -425,14 +425,13 @@ private fun captureImage() {
 }
 
 
-private fun sendImageToApi(byteArray: ByteArray) {
+private fun sendImageToApi(byteArray: ByteArray, promise: Promise) {
 
-     // Log the byte array size to ensure it is being passed correctly
+    // Log the byte array size to ensure it is being passed correctly
     Log.d("sendImageToApi", "Byte array size: ${byteArray.size} bytes")
 
     // Optionally, log a portion of the byte array to see the data (e.g., first 100 bytes)
     Log.d("sendImageToApi", "First 100 bytes of byte array: ${byteArray.take(100)}")
-
 
     val client = OkHttpClient()
     val mediaType = "image/jpeg".toMediaType()
@@ -454,26 +453,32 @@ private fun sendImageToApi(byteArray: ByteArray) {
         try {
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                val responseBody = response.body?.bytes()
+                // Read the response body as a string or convert it to the desired format
+                val responseBody = response.body?.string() // String format response
                 Log.d("APIResponse", "Image uploaded successfully: $responseBody")
+                
+                // Resolve the promise with the success response
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(currentActivity, "Image uploaded successfully!", Toast.LENGTH_SHORT).show()
+                    promise.resolve(responseBody ?: "No response body")
                 }
             } else {
                 Log.e("APIResponse", "Failed to upload image: ${response.message}")
+                
+                // Reject the promise with the failure message
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(currentActivity, "Failed to upload image: ${response.message}", Toast.LENGTH_SHORT).show()
+                    promise.reject("UPLOAD_FAILED", "Failed to upload image: ${response.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e("APIResponse", "Error uploading image: ${e.message}")
+            
+            // Reject the promise with the error message
             withContext(Dispatchers.Main) {
-                Toast.makeText(currentActivity, "Error uploading image", Toast.LENGTH_SHORT).show()
+                promise.reject("UPLOAD_ERROR", "Error uploading image: ${e.message}")
             }
         }
     }
 }
-
 
     // Start background thread to handle camera operations
     private fun startBackgroundThread() {
