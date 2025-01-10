@@ -61,6 +61,8 @@ import android.graphics.Bitmap
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 
 
@@ -75,6 +77,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     private lateinit var overlayImageView: ImageView
     private lateinit var instructionTextView: TextView
     private lateinit var captureButton: Button
+    val sharedViewModel = SharedViewModel()
 
     companion object {
         private const val CAMERA_PERMISSION_REQUEST_CODE = 100
@@ -388,7 +391,7 @@ private fun captureImage(promise: Promise) {
                                     val byteArray = ByteArray(buffer.remaining())
                                     buffer.get(byteArray)
                                     // Call the function to send the image to the API
-                                    sendImageToApi(byteArray,promise)
+                                    sendImageToApi(byteArray,promise,sharedViewModel )
 
                                     // Log the byte array of the JPEG image (this can be large, so be cautious about logging large data)
                                     Log.d("CameraModule", "Captured image byte array: ${byteArray.joinToString(", ")}")
@@ -399,6 +402,7 @@ private fun captureImage(promise: Promise) {
 
                                     // Handle the image as needed (e.g., process it or save it)
                                    // saveAndLogCapturedImage(base64Image)
+                                    //navController.navigate("emptyScreen")
 
                                     // Close the image to release resources
                                     image.close()
@@ -425,13 +429,10 @@ private fun captureImage(promise: Promise) {
 }
 
 
-private fun sendImageToApi(byteArray: ByteArray, promise: Promise) {
+private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewModel: SharedViewModel) {
 
     // Log the byte array size to ensure it is being passed correctly
     Log.d("sendImageToApi", "Byte array size: ${byteArray.size} bytes")
-
-    // Optionally, log a portion of the byte array to see the data (e.g., first 100 bytes)
-    Log.d("sendImageToApi", "First 100 bytes of byte array: ${byteArray.take(100)}")
 
     val client = OkHttpClient()
     val mediaType = "image/jpeg".toMediaType()
@@ -453,32 +454,52 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise) {
         try {
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                // Read the response body as a string or convert it to the desired format
-                val responseBody = response.body?.string() // String format response
-                Log.d("APIResponse", "Image uploaded successfully: $responseBody")
-                
-                // Resolve the promise with the success response
-                withContext(Dispatchers.Main) {
-                    promise.resolve(responseBody ?: "No response body")
+                // Read the response body as a byte array
+                val responseBody = response.body?.bytes()
+                if (responseBody != null) {
+                    Log.d("APIResponse", "Image uploaded successfully, received byte array")
+
+                    // Convert byte array to Bitmap
+                    val bitmap = BitmapFactory.decodeByteArray(responseBody, 0, responseBody.size)
+
+                    if (bitmap != null) {
+                        // Update the SharedViewModel with the new Bitmap
+                        withContext(Dispatchers.Main) {
+                            sharedViewModel.setFrontImage(bitmap)
+                        }
+                        Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
+
+                        // Optionally, log the Bitmap dimensions if needed
+            Log.d("APIResponse", "Bitmap dimensions: ${bitmap.width}x${bitmap.height}")
+                    } else {
+                        Log.e("APIResponse", "Failed to decode Bitmap from response")
+                    }
+
+                    // Resolve the promise with a success message
+                    withContext(Dispatchers.Main) {
+                        promise.resolve("Image processed and stored successfully")
+                    }
+                } else {
+                    Log.e("APIResponse", "No response body received")
+                    withContext(Dispatchers.Main) {
+                        promise.reject("UPLOAD_FAILED", "No response body received")
+                    }
                 }
             } else {
                 Log.e("APIResponse", "Failed to upload image: ${response.message}")
-                
-                // Reject the promise with the failure message
                 withContext(Dispatchers.Main) {
                     promise.reject("UPLOAD_FAILED", "Failed to upload image: ${response.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e("APIResponse", "Error uploading image: ${e.message}")
-            
-            // Reject the promise with the error message
             withContext(Dispatchers.Main) {
                 promise.reject("UPLOAD_ERROR", "Error uploading image: ${e.message}")
             }
         }
     }
 }
+
 
     // Start background thread to handle camera operations
     private fun startBackgroundThread() {
@@ -523,8 +544,35 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise) {
     private fun requestCameraPermission(activity: Activity, requestCode: Int) {
         // Implement permission request logic here
     }
+
+
+  /*  @Composable
+    fun EmptyScreen() {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Empty Page",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Gray
+            )
+        }
+    }*/ 
 }
 
+
+class SharedViewModel : ViewModel() {
+    private val _frontImage = MutableStateFlow<Bitmap?>(null)
+    val frontImage: StateFlow<Bitmap?> get() = _frontImage
+
+    fun setFrontImage(bitmap: Bitmap) {
+        _frontImage.value = bitmap
+    }
+}
 
 
 class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
