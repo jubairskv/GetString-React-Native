@@ -88,6 +88,7 @@ import android.app.Application
 
 
 
+
 class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private var cameraDevice: CameraDevice? = null
     private lateinit var surface: Surface
@@ -472,41 +473,40 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
             }
 
             if (response.isSuccessful) {
-                val responseBody = response.body?.bytes()
-                if (responseBody != null) {
-                    val bitmap = BitmapFactory.decodeByteArray(responseBody, 0, responseBody.size)
-                    if (bitmap != null) {
-                        withContext(Dispatchers.Main) {
-                            sharedViewModel.setFrontImage(bitmap)
-                             // Start a new activity here after successful upload
-                            navigateToNewActivity(bitMap)
-                        }
+    val responseBody = response.body?.bytes()
+    if (responseBody != null) {
+        val bitmap = BitmapFactory.decodeByteArray(responseBody, 0, responseBody.size)
+        if (bitmap != null) {
+            withContext(Dispatchers.Main) {
+                sharedViewModel.setFrontImage(bitmap)
 
-                        
-                        Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
-                    } else {
-                        Log.e("APIResponse", "Failed to decode Bitmap from response")
-                         showErrorDialog(context, "Failed to decode Bitmap from response")
-                    }
+                // Convert Bitmap to ByteArray before passing to navigateToNewActivity
+                val byteArrayOutputStream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream)
+                val byteArray = byteArrayOutputStream.toByteArray()
 
-                    withContext(Dispatchers.Main) {
-                        promise.resolve("Image processed and stored successfully")
-                        
-                    }
-                } else {
-                    showErrorDialog(context, "No response body received")
-                    Log.e("APIResponse", "No response body received")
-                    withContext(Dispatchers.Main) {
-                        promise.reject("UPLOAD_FAILED", "No response body received")
-                    }
-                }
-            } else {
-                showErrorDialog(context, "Failed to upload image: ${response.message}")
-                Log.e("APIResponse", "Failed to upload image: ${response.message}")
-                withContext(Dispatchers.Main) {
-                    promise.reject("UPLOAD_FAILED", "Failed to upload image: ${response.message}")
-                }
+                // Pass the ByteArray to the next activity
+                navigateToNewActivity(byteArray)
             }
+
+            Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
+        } else {
+            Log.e("APIResponse", "Failed to decode Bitmap from response")
+            showErrorDialog(context, "Failed to decode Bitmap from response")
+        }
+
+        withContext(Dispatchers.Main) {
+            promise.resolve("Image processed and stored successfully")
+        }
+    }
+} else {
+    showErrorDialog(context, "No response body received")
+    Log.e("APIResponse", "No response body received")
+    withContext(Dispatchers.Main) {
+        promise.reject("UPLOAD_FAILED", "No response body received")
+    }
+}
+
         } catch (e: Exception) {
             Log.e("APIResponse", "Error uploading image: ${e.message}")
             withContext(Dispatchers.Main) {
@@ -582,9 +582,9 @@ private fun showErrorDialog(context: Context, message: String) {
 
        
     // Method to navigate to a new Android Activity
-private fun navigateToNewActivity() {
-    val intent = Intent(currentActivity, NewActivity::class.java) 
-    intent.putExtra("imagePath", imagePath)  // Replace NewActivity with your target activity class
+private fun navigateToNewActivity(byteArray: ByteArray) {
+    val intent = Intent(currentActivity, NewActivity::class.java)
+    intent.putExtra("imageByteArray", byteArray) // Pass ByteArray instead of Bitmap
     currentActivity?.startActivity(intent)
 }
 
