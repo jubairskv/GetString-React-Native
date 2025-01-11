@@ -76,6 +76,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
 
 
 
@@ -445,23 +446,19 @@ private fun captureImage(promise: Promise) {
 
 
 private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewModel: SharedViewModel) {
-
-    // Log the byte array size to ensure it is being passed correctly
-    Log.d("sendImageToApi", "Byte array size: ${byteArray.size} bytes")
-
     val client = OkHttpClient()
     val mediaType = "image/jpeg".toMediaType()
     val requestBody = MultipartBody.Builder()
         .setType(MultipartBody.FORM)
         .addFormDataPart(
-            "file", // Form field name
-            "image.jpg", // File name
-            byteArray.toRequestBody(mediaType) // Byte array as the file content
+            "file", 
+            "image.jpg", 
+            byteArray.toRequestBody(mediaType)
         )
         .build()
 
     val request = Request.Builder()
-        .url("https://api-innovitegra.online/crop-aadhar-card/") // Replace with your API endpoint
+        .url("https://api-innovitegra.online/crop-aadhar-card/")
         .post(requestBody)
         .build()
 
@@ -469,38 +466,24 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
         try {
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                // Read the response body as a byte array
                 val responseBody = response.body?.bytes()
                 if (responseBody != null) {
                     Log.d("APIResponse", "Image uploaded successfully, received byte array")
 
-                    // Convert byte array to Bitmap
                     val bitmap = BitmapFactory.decodeByteArray(responseBody, 0, responseBody.size)
-
                     if (bitmap != null) {
-                        // Update the SharedViewModel with the new Bitmap
                         withContext(Dispatchers.Main) {
                             sharedViewModel.setFrontImage(bitmap)
-                            
+
+                            // Start a new activity here after successful upload
+                            navigateToNewActivity()
                         }
 
-                        // Send a navigation event to React Native
-                        val params = Arguments.createMap()
-                        params.putString("screen", "DisplayScreen")
-
-                        // Log the event before sending it
-                        Log.d("NavigationEvent", "Sending navigation event with params: $params")
-                        sendNavigationEvent("navigateToScreen", params)
-
-                        Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
-
-                        // Optionally, log the Bitmap dimensions if needed
                         Log.d("APIResponse", "Bitmap dimensions: ${bitmap.width}x${bitmap.height}")
                     } else {
                         Log.e("APIResponse", "Failed to decode Bitmap from response")
                     }
 
-                    // Resolve the promise with a success message
                     withContext(Dispatchers.Main) {
                         promise.resolve("Image processed and stored successfully")
                     }
@@ -574,22 +557,11 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
 
 
        
-    @Composable
-    fun DisplayImageScreen() {
-        
-    }
-
-
-
-    @Composable
-    fun NavigationGraph(viewModel: SharedViewModel) {
-        val navController = rememberNavController()
-
-        NavHost(navController = navController, startDestination = "cameraScreen") {
-            //composable("cameraScreen") { CameraScreen(navController, viewModel) }
-            composable("displayImageScreen") { DisplayImageScreen() }
-        }
-    }
+    // Method to navigate to a new Android Activity
+private fun navigateToNewActivity() {
+    val intent = Intent(currentActivity, NewActivity::class.java)  // Replace NewActivity with your target activity class
+    currentActivity?.startActivity(intent)
+}
 
 }
 
