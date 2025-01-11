@@ -77,6 +77,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
+import android.widget.ProgressBar
+
 
 
 
@@ -92,6 +94,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     private lateinit var instructionTextView: TextView
     private lateinit var captureButton: Button
     val sharedViewModel = SharedViewModel()
+    private lateinit var progressBar: ProgressBar
 
     companion object {
         private const val CAMERA_PERMISSION_REQUEST_CODE = 100
@@ -100,100 +103,106 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     override fun getName(): String = "CameraModule"
 
     private fun setupUI(activity: Activity, promise: Promise) {
-        frameLayout = FrameLayout(activity).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        textureView = TextureView(activity).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        overlayImageView = ImageView(activity).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        instructionTextView = TextView(activity).apply {
-            text = "Take a Picture of Front side of ID Card"
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#b9b9b9"))
-            gravity = Gravity.CENTER
-            layoutParams = FrameLayout.LayoutParams(
-                900,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.TOP
-                topMargin = 80
-                leftMargin = 100
-                rightMargin = 50
-            }
-            setPadding(50, 0, 50, 0)
-        background = GradientDrawable().apply {
-                setColor(Color.parseColor("#b9b9b9"))
-                cornerRadius = 30f
-            }
-        }
-        
-
-        captureButton = Button(activity).apply {
-            text = "Capture Front ID"
-            setBackgroundColor(Color.parseColor("#FF4081"))
-            setTextColor(Color.WHITE)
-            textSize = 18f
-            layoutParams = FrameLayout.LayoutParams(
-                800,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = 50
-            }
-            setPadding(50, 0, 50, 0)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FF4081"))
-                cornerRadius = 30f
-            }
-        }
-
-        /// Add white border box at the center
-        val borderBox = View(activity).apply {
-        // Set width to 700 and height to maintain a 4:3 aspect ratio
+    frameLayout = FrameLayout(activity).apply {
         layoutParams = FrameLayout.LayoutParams(
-            700, // Width of the border box
-            (700 * 3) / 4 // Height calculated for a 4:3 aspect ratio
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+    }
+
+    textureView = TextureView(activity).apply {
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+    }
+
+    overlayImageView = ImageView(activity).apply {
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+    }
+
+    instructionTextView = TextView(activity).apply {
+        text = "Take a Picture of Front side of ID Card"
+        textSize = 22f
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.parseColor("#b9b9b9"))
+        gravity = Gravity.CENTER
+        layoutParams = FrameLayout.LayoutParams(
+            900,
+            FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            gravity = Gravity.CENTER // Center it in the parent layout
+            gravity = Gravity.TOP
+            topMargin = 80
+            leftMargin = 100
+            rightMargin = 50
         }
-        // Create a transparent background with a white border
+        setPadding(50, 0, 50, 0)
         background = GradientDrawable().apply {
-            setColor(Color.TRANSPARENT) // Transparent background
-            setStroke(4, Color.WHITE)  // White border with 4dp thickness
-            cornerRadius = 16f         // Optional: Rounded corners
+            setColor(Color.parseColor("#b9b9b9"))
+            cornerRadius = 30f
         }
     }
 
-
-        frameLayout.addView(textureView)
-        frameLayout.addView(overlayImageView)
-        frameLayout.addView(borderBox) // Add the white box to the layout
-        frameLayout.addView(instructionTextView)
-        frameLayout.addView(captureButton)
-
-        activity.setContentView(frameLayout)
-
-        // Inside your setupUI function, add a click listener to the captureButton
-        captureButton.setOnClickListener {
-            captureImage(promise)
+    captureButton = Button(activity).apply {
+        text = "Capture Front ID"
+        setBackgroundColor(Color.parseColor("#FF4081"))
+        setTextColor(Color.WHITE)
+        textSize = 18f
+        layoutParams = FrameLayout.LayoutParams(
+            800,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            bottomMargin = 50
+        }
+        setPadding(50, 0, 50, 0)
+        background = GradientDrawable().apply {
+            setColor(Color.parseColor("#FF4081"))
+            cornerRadius = 30f
         }
     }
+
+    // Progress bar for loading
+    progressBar = ProgressBar(activity).apply {
+        visibility = View.GONE // Initially hidden
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.CENTER
+        }
+    }
+
+    val borderBox = View(activity).apply {
+        layoutParams = FrameLayout.LayoutParams(
+            700,
+            (700 * 3) / 4
+        ).apply {
+            gravity = Gravity.CENTER
+        }
+        background = GradientDrawable().apply {
+            setColor(Color.TRANSPARENT)
+            setStroke(4, Color.WHITE)
+            cornerRadius = 16f
+        }
+    }
+
+    frameLayout.addView(textureView)
+    frameLayout.addView(overlayImageView)
+    frameLayout.addView(borderBox)
+    frameLayout.addView(instructionTextView)
+    frameLayout.addView(captureButton)
+    frameLayout.addView(progressBar) // Add progress bar to the layout
+
+    activity.setContentView(frameLayout)
+
+    captureButton.setOnClickListener {
+        captureImage(promise)
+    }
+}
 
 
 
@@ -364,30 +373,23 @@ private fun captureImage(promise: Promise) {
         return
     }
 
+    // Show the loading progress bar
+    progressBar.visibility = View.VISIBLE
+
     try {
-        // Set up the capture request
         val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
         val surface = Surface(textureView.surfaceTexture)
-
-        // Add the surface to the capture request
         captureRequestBuilder.addTarget(surface)
-
-        // Set capture settings (optional, like focusing or orientation)
         captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
 
-        // Create an ImageReader to capture the image
-        val imageReader = ImageReader.newInstance(1920, 1080, ImageFormat.JPEG, 1) // Adjust resolution if needed
+        val imageReader = ImageReader.newInstance(1920, 1080, ImageFormat.JPEG, 1)
         Log.d("CameraModule", "ImageReader created with resolution: 1920x1080")
-
-        // Set the ImageReader surface as a target for the capture
         captureRequestBuilder.addTarget(imageReader.surface)
 
-        // Capture the image
         cameraDevice!!.createCaptureSession(
             listOf(surface, imageReader.surface),
             object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
-                    // Capture the image when session is configured
                     try {
                         session.capture(captureRequestBuilder.build(), object : CameraCaptureSession.CaptureCallback() {
                             override fun onCaptureCompleted(
@@ -397,31 +399,16 @@ private fun captureImage(promise: Promise) {
                             ) {
                                 super.onCaptureCompleted(session, request, result)
                                 Log.d("CameraModule", "Capture completed, processing the image")
-
-                                // Handle the captured image
+                                
                                 val image = imageReader.acquireLatestImage()
                                 if (image != null) {
                                     Log.d("CameraModule", "Captured image: $image")
 
-                                    // Extract image byte data
                                     val buffer = image.planes[0].buffer
                                     val byteArray = ByteArray(buffer.remaining())
                                     buffer.get(byteArray)
-                                    // Call the function to send the image to the API
-                                    sendImageToApi(byteArray,promise,sharedViewModel)
+                                    sendImageToApi(byteArray, promise, sharedViewModel)
 
-                                    // Log the byte array of the JPEG image (this can be large, so be cautious about logging large data)
-                                    Log.d("CameraModule", "Captured image byte array: ${byteArray.joinToString(", ")}")
-
-                                    // Optionally, you could convert to base64 for logging or further use
-                                    val base64Image = Base64.encodeToString(byteArray, Base64.DEFAULT)
-                                    Log.d("CameraModule", "Captured image in base64: $base64Image")
-
-                                    // Handle the image as needed (e.g., process it or save it)
-                                   // saveAndLogCapturedImage(base64Image)
-                                    //navController.navigate("emptyScreen")
-
-                                    // Close the image to release resources
                                     image.close()
                                     Log.d("CameraModule", "Image closed")
                                 } else {
@@ -446,7 +433,10 @@ private fun captureImage(promise: Promise) {
 }
 
 
+
 private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewModel: SharedViewModel) {
+    Log.d("sendImageToApi", "Byte array size: ${byteArray.size} bytes")
+
     val client = OkHttpClient()
     val mediaType = "image/jpeg".toMediaType()
     val requestBody = MultipartBody.Builder()
@@ -459,28 +449,30 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
         .build()
 
     val request = Request.Builder()
-        .url("https://api-innovitegra.online/crop-aadhar-card/")
+        .url("https://api-innovitegra.online/crop-aadhar-card/") 
         .post(requestBody)
         .build()
 
     CoroutineScope(Dispatchers.IO).launch {
         try {
             val response = client.newCall(request).execute()
+            withContext(Dispatchers.Main) {
+                progressBar.visibility = View.GONE // Hide progress bar once done
+            }
+
             if (response.isSuccessful) {
                 val responseBody = response.body?.bytes()
                 if (responseBody != null) {
-                    Log.d("APIResponse", "Image uploaded successfully, received byte array")
-
                     val bitmap = BitmapFactory.decodeByteArray(responseBody, 0, responseBody.size)
                     if (bitmap != null) {
                         withContext(Dispatchers.Main) {
                             sharedViewModel.setFrontImage(bitmap)
-
-                            // Start a new activity here after successful upload
+                             // Start a new activity here after successful upload
                             navigateToNewActivity()
                         }
 
-                        Log.d("APIResponse", "Bitmap dimensions: ${bitmap.width}x${bitmap.height}")
+                        
+                        Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
                     } else {
                         Log.e("APIResponse", "Failed to decode Bitmap from response")
                     }
