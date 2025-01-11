@@ -1,6 +1,7 @@
 package com.rdemo
 
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -8,8 +9,24 @@ import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import android.view.Gravity
 import android.widget.LinearLayout.LayoutParams
+import android.widget.ImageView
+import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
+import com.rdemo.SharedViewModel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
+
+
+
+
 
 class NewActivity : AppCompatActivity() {
+
+    private val sharedViewModel: SharedViewModel by viewModels {
+        ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -20,26 +37,22 @@ class NewActivity : AppCompatActivity() {
         rootLayout.gravity = Gravity.CENTER
         rootLayout.setPadding(16, 16, 16, 16)
 
-        // Create TextView dynamically
-        val textView = TextView(this)
-        textView.text = "Welcome to New Activity!"
-        textView.textSize = 20f // Set the text size
-        textView.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-        rootLayout.addView(textView)
+        // Create ImageView to show frontImage
+        val imageView = ImageView(this)
+        imageView.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        rootLayout.addView(imageView)
 
-        // Create Button dynamically
-        val button = Button(this)
-        button.text = "Click Me"
-        button.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-        
-        // Set button click listener to show Toast
-        button.setOnClickListener {
-            Toast.makeText(this, "Button clicked!", Toast.LENGTH_SHORT).show()
+        // Retrieve the image path passed from the Intent
+        val imagePath = intent.getStringExtra("imagePath")
+        if (imagePath != null) {
+            val bitmap = BitmapFactory.decodeFile(imagePath)
+            imageView.setImageBitmap(bitmap)
+        } else {
+            Log.e("NewActivity", "No image path received")
         }
-        
-        rootLayout.addView(button)
 
         // Set the root layout as the content view
         setContentView(rootLayout)
     }
 }
+

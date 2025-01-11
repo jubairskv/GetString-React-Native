@@ -1,7 +1,6 @@
 package com.rdemo
 
 import android.app.Activity
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.*
 import android.widget.Toast
@@ -78,6 +77,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
 import android.widget.ProgressBar
+import android.app.AlertDialog
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.activity.viewModels
+import android.app.Application
+
 
 
 
@@ -93,8 +99,14 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     private lateinit var overlayImageView: ImageView
     private lateinit var instructionTextView: TextView
     private lateinit var captureButton: Button
-    val sharedViewModel = SharedViewModel()
     private lateinit var progressBar: ProgressBar
+    private val context: Context = reactContext
+
+private val sharedViewModel: SharedViewModel by lazy {
+        ViewModelProvider.AndroidViewModelFactory.getInstance(reactContext.applicationContext as Application)
+            .create(SharedViewModel::class.java)
+    }
+
 
     companion object {
         private const val CAMERA_PERMISSION_REQUEST_CODE = 100
@@ -102,7 +114,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
     override fun getName(): String = "CameraModule"
 
-    private fun setupUI(activity: Activity, promise: Promise) {
+    private fun setupUI(activity: Activity, promise: Promise,context: Context) {
     frameLayout = FrameLayout(activity).apply {
         layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -200,7 +212,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     activity.setContentView(frameLayout)
 
     captureButton.setOnClickListener {
-        captureImage(promise)
+        captureImage(promise,context)
     }
 }
 
@@ -214,7 +226,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
             try {
                 val currentActivity = currentActivity ?: throw Exception("No current activity")
 
-                setupUI(currentActivity,promise)
+                setupUI(currentActivity,promise,context)
 
                 textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
@@ -366,7 +378,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
 
 
-private fun captureImage(promise: Promise) {
+private fun captureImage(promise: Promise, context: Context) {
     if (cameraDevice == null) {
         Toast.makeText(currentActivity, "Camera is not initialized", Toast.LENGTH_SHORT).show()
         Log.e("CameraModule", "Camera is not initialized")
@@ -407,8 +419,7 @@ private fun captureImage(promise: Promise) {
                                     val buffer = image.planes[0].buffer
                                     val byteArray = ByteArray(buffer.remaining())
                                     buffer.get(byteArray)
-                                    sendImageToApi(byteArray, promise, sharedViewModel)
-
+                                    sendImageToApi(byteArray, promise, sharedViewModel,context)
                                     image.close()
                                     Log.d("CameraModule", "Image closed")
                                 } else {
@@ -434,7 +445,7 @@ private fun captureImage(promise: Promise) {
 
 
 
-private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewModel: SharedViewModel) {
+private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewModel: SharedViewModel,context: Context) {
     Log.d("sendImageToApi", "Byte array size: ${byteArray.size} bytes")
 
     val client = OkHttpClient()
@@ -468,25 +479,29 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
                         withContext(Dispatchers.Main) {
                             sharedViewModel.setFrontImage(bitmap)
                              // Start a new activity here after successful upload
-                            navigateToNewActivity()
+                            navigateToNewActivity(bitMap)
                         }
 
                         
                         Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
                     } else {
                         Log.e("APIResponse", "Failed to decode Bitmap from response")
+                         showErrorDialog(context, "Failed to decode Bitmap from response")
                     }
 
                     withContext(Dispatchers.Main) {
                         promise.resolve("Image processed and stored successfully")
+                        
                     }
                 } else {
+                    showErrorDialog(context, "No response body received")
                     Log.e("APIResponse", "No response body received")
                     withContext(Dispatchers.Main) {
                         promise.reject("UPLOAD_FAILED", "No response body received")
                     }
                 }
             } else {
+                showErrorDialog(context, "Failed to upload image: ${response.message}")
                 Log.e("APIResponse", "Failed to upload image: ${response.message}")
                 withContext(Dispatchers.Main) {
                     promise.reject("UPLOAD_FAILED", "Failed to upload image: ${response.message}")
@@ -496,9 +511,25 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
             Log.e("APIResponse", "Error uploading image: ${e.message}")
             withContext(Dispatchers.Main) {
                 promise.reject("UPLOAD_ERROR", "Error uploading image: ${e.message}")
+                showErrorDialog(context, "Error uploading image: ${e.message}")
             }
         }
     }
+}
+
+
+private fun showErrorDialog(context: Context, message: String) {
+    Log.d("showErrorDialog", "Displaying error dialog with message: $message")
+
+    AlertDialog.Builder(context)
+        .setTitle("Error")
+        .setMessage(message)
+        .setPositiveButton("OK") { dialog, _ ->
+            dialog.dismiss()
+            Log.d("showErrorDialog", "Dialog dismissed by user")
+        }
+        .setCancelable(false)
+        .show()
 }
 
 
@@ -552,18 +583,20 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
        
     // Method to navigate to a new Android Activity
 private fun navigateToNewActivity() {
-    val intent = Intent(currentActivity, NewActivity::class.java)  // Replace NewActivity with your target activity class
+    val intent = Intent(currentActivity, NewActivity::class.java) 
+    intent.putExtra("imagePath", imagePath)  // Replace NewActivity with your target activity class
     currentActivity?.startActivity(intent)
 }
 
 }
 
 
-class SharedViewModel : ViewModel() {
+class SharedViewModel(application: Application) : AndroidViewModel(application) {
     private val _frontImage = MutableStateFlow<Bitmap?>(null)
     val frontImage: StateFlow<Bitmap?> get() = _frontImage
 
     fun setFrontImage(bitmap: Bitmap) {
+        Log.d("SharedViewModel", "Updating frontImage with new Bitmap: $bitmap")
         _frontImage.value = bitmap
     }
 }
@@ -580,6 +613,7 @@ class MyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModu
     private lateinit var overlayImageView: ImageView
     private var lastDetectionTime = 0L
     private val detectionInterval = 500L // Process every 500ms for smoother detection
+    val context = reactContext
 
     private var headMovementTasks = mutableMapOf(
         "Blink detected" to false,
