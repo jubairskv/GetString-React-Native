@@ -63,6 +63,19 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.*
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 
 
@@ -179,6 +192,8 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
             captureImage(promise)
         }
     }
+
+
 
 
     // Expose the method to React Native to start camera preview
@@ -391,7 +406,7 @@ private fun captureImage(promise: Promise) {
                                     val byteArray = ByteArray(buffer.remaining())
                                     buffer.get(byteArray)
                                     // Call the function to send the image to the API
-                                    sendImageToApi(byteArray,promise,sharedViewModel )
+                                    sendImageToApi(byteArray,promise,sharedViewModel)
 
                                     // Log the byte array of the JPEG image (this can be large, so be cautious about logging large data)
                                     Log.d("CameraModule", "Captured image byte array: ${byteArray.joinToString(", ")}")
@@ -466,11 +481,21 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
                         // Update the SharedViewModel with the new Bitmap
                         withContext(Dispatchers.Main) {
                             sharedViewModel.setFrontImage(bitmap)
+                            
                         }
+
+                        // Send a navigation event to React Native
+                        val params = Arguments.createMap()
+                        params.putString("screen", "DisplayScreen")
+
+                        // Log the event before sending it
+                        Log.d("NavigationEvent", "Sending navigation event with params: $params")
+                        sendNavigationEvent("navigateToScreen", params)
+
                         Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
 
                         // Optionally, log the Bitmap dimensions if needed
-            Log.d("APIResponse", "Bitmap dimensions: ${bitmap.width}x${bitmap.height}")
+                        Log.d("APIResponse", "Bitmap dimensions: ${bitmap.width}x${bitmap.height}")
                     } else {
                         Log.e("APIResponse", "Failed to decode Bitmap from response")
                     }
@@ -499,6 +524,20 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
         }
     }
 }
+
+
+private fun sendNavigationEvent(eventName: String, params: WritableMap) {
+    // Log the event before sending it
+    Log.d("NavigationEvent", "Sending Event: Event Name: $eventName, Params: $params")
+
+    reactApplicationContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(eventName, params)
+
+    // Log the event emitted
+    Log.d("NavigationEvent", "Event sent successfully with params: $params")
+}
+
 
 
     // Start background thread to handle camera operations
@@ -546,22 +585,24 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
     }
 
 
-  /*  @Composable
-    fun EmptyScreen() {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.White),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Empty Page",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Gray
-            )
+       
+    @Composable
+    fun DisplayImageScreen() {
+        
+    }
+
+
+
+    @Composable
+    fun NavigationGraph(viewModel: SharedViewModel) {
+        val navController = rememberNavController()
+
+        NavHost(navController = navController, startDestination = "cameraScreen") {
+            //composable("cameraScreen") { CameraScreen(navController, viewModel) }
+            composable("displayImageScreen") { DisplayImageScreen() }
         }
-    }*/ 
+    }
+
 }
 
 
