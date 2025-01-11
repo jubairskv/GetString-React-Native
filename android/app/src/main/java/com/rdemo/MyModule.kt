@@ -526,18 +526,6 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
 }
 
 
-private fun sendNavigationEvent(eventName: String, params: WritableMap) {
-    // Log the event before sending it
-    Log.d("NavigationEvent", "Sending Event: Event Name: $eventName, Params: $params")
-
-    reactApplicationContext
-        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-        .emit(eventName, params)
-
-    // Log the event emitted
-    Log.d("NavigationEvent", "Event sent successfully with params: $params")
-}
-
 
 
     // Start background thread to handle camera operations
