@@ -30,5 +30,6 @@
       <activity android:name=".CameraActivity" />
       <activity android:name=".PreviewActivity" />
       <activity android:name=".NewActivity"></activity>
+      <activity android:name=".BackIdCardActivity"></activity>
     </application>
 </manifest>

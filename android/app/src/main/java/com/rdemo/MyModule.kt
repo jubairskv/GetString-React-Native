@@ -103,7 +103,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
     private lateinit var progressBar: ProgressBar
     private val context: Context = reactContext
 
-private val sharedViewModel: SharedViewModel by lazy {
+    private val sharedViewModel: SharedViewModel by lazy {
         ViewModelProvider.AndroidViewModelFactory.getInstance(reactContext.applicationContext as Application)
             .create(SharedViewModel::class.java)
     }
@@ -582,13 +582,17 @@ private fun showErrorDialog(context: Context, message: String) {
 
        
     // Method to navigate to a new Android Activity
-private fun navigateToNewActivity(byteArray: ByteArray) {
-    val intent = Intent(currentActivity, NewActivity::class.java)
-    intent.putExtra("imageByteArray", byteArray) // Pass ByteArray instead of Bitmap
-    currentActivity?.startActivity(intent)
-}
+    private fun navigateToNewActivity(byteArray: ByteArray) {
+        val intent = Intent(currentActivity, NewActivity::class.java)
+        intent.putExtra("imageByteArray", byteArray) // Pass ByteArray instead of Bitmap
+        currentActivity?.startActivity(intent)
+    }
+
+
+    
 
 }
+
 
 
 class SharedViewModel(application: Application) : AndroidViewModel(application) {

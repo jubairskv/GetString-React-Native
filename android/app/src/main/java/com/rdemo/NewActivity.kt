@@ -15,6 +15,8 @@ import androidx.activity.viewModels
 import androidx.lifecycle.ViewModelProvider
 import android.widget.Toast
 import android.widget.LinearLayout.LayoutParams
+import android.content.Intent
+
 
 class NewActivity : AppCompatActivity() {
 
@@ -71,8 +73,8 @@ class NewActivity : AppCompatActivity() {
                 800,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.BOTTOM
-                topMargin = 80
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                topMargin = 1700
             }
         }
 
@@ -88,9 +90,23 @@ class NewActivity : AppCompatActivity() {
     }
 
     private fun processBackIdCard() {
-        Log.d("NewActivity", "Processing the back ID card...")
-        Toast.makeText(applicationContext, "Back ID Card processed!", Toast.LENGTH_SHORT).show()
+    Log.d("NewActivity", "Processing the back ID card...")
 
+    // Show the toast message
+    Toast.makeText(applicationContext, "Back ID Card processed!", Toast.LENGTH_SHORT).show()
+
+    // Get the image byte array
+    val byteArray = intent.getByteArrayExtra("imageByteArray")
+
+    // Navigate to the new activity
+    val intent = Intent(this, BackIdCardActivity::class.java)
+    // Pass the image byte array to BackIdCardActivity
+    byteArray?.let {
+        intent.putExtra("imageByteArray", it)
     }
+
+    startActivity(intent)
+}
+
 }
 
