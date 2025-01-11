@@ -142,6 +142,7 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
                 cornerRadius = 30f
             }
         }
+        
 
         captureButton = Button(activity).apply {
             text = "Capture Front ID"
