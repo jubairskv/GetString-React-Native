@@ -222,34 +222,58 @@ class CameraModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
 
     // Expose the method to React Native to start camera preview
     @ReactMethod
-    fun startCameraPreview(promise: Promise) {
-        UiThreadUtil.runOnUiThread {
-            try {
-                val currentActivity = currentActivity ?: throw Exception("No current activity")
+fun startCameraPreview(promise: Promise) {
+    UiThreadUtil.runOnUiThread {
+        try {
+            val currentActivity = currentActivity ?: throw Exception("No current activity")
 
-                setupUI(currentActivity,promise,context)
-
-                textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                    override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
-                        startBackgroundThread()
-                        openCamera(surfaceTexture, promise)
-                    }
-
-                    override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
-
-                    override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                        stopCamera()
-                        stopBackgroundThread()
-                        return true
-                    }
-
-                    override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
-                }
-            } catch (e: Exception) {
-                promise.reject("CAMERA_ERROR", e.message)
+            // Check for camera permission
+            if (!hasCameraPermission(currentActivity)) {
+                requestCameraPermission(currentActivity)
+                return@runOnUiThread
             }
+
+            // Proceed with camera preview setup
+            setupUI(currentActivity, promise, context)
+
+            textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                    startBackgroundThread()
+                    openCamera(surfaceTexture, promise)
+                }
+
+                override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
+
+                override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                    stopCamera()
+                    stopBackgroundThread()
+                    return true
+                }
+
+                override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
+            }
+        } catch (e: Exception) {
+            promise.reject("CAMERA_ERROR", e.message)
         }
     }
+}
+
+// Check and request camera permission
+private fun hasCameraPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.CAMERA
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun requestCameraPermission(activity: Activity) {
+    ActivityCompat.requestPermissions(
+        activity,
+        arrayOf(Manifest.permission.CAMERA),
+        CAMERA_PERMISSION_REQUEST_CODE
+    )
+}
+
 
 
     // Open the camera and start the preview session
@@ -446,7 +470,12 @@ private fun captureImage(promise: Promise, context: Context) {
 
 
 
-private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewModel: SharedViewModel,context: Context) {
+private fun sendImageToApi(
+    byteArray: ByteArray,
+    promise: Promise,
+    sharedViewModel: SharedViewModel,
+    context: Context
+) {
     Log.d("sendImageToApi", "Byte array size: ${byteArray.size} bytes")
 
     val client = OkHttpClient()
@@ -454,14 +483,14 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
     val requestBody = MultipartBody.Builder()
         .setType(MultipartBody.FORM)
         .addFormDataPart(
-            "file", 
-            "image.jpg", 
+            "file",
+            "image.jpg",
             byteArray.toRequestBody(mediaType)
         )
         .build()
 
     val request = Request.Builder()
-        .url("https://api-innovitegra.online/crop-aadhar-card/") 
+        .url("https://api-innovitegra.online/crop-aadhar-card/")
         .post(requestBody)
         .build()
 
@@ -473,64 +502,71 @@ private fun sendImageToApi(byteArray: ByteArray, promise: Promise, sharedViewMod
             }
 
             if (response.isSuccessful) {
-    val responseBody = response.body?.bytes()
-    if (responseBody != null) {
-        val bitmap = BitmapFactory.decodeByteArray(responseBody, 0, responseBody.size)
-        if (bitmap != null) {
-            withContext(Dispatchers.Main) {
-                sharedViewModel.setFrontImage(bitmap)
+                val responseBody = response.body?.bytes()
+                if (responseBody != null) {
+                    val bitmap = BitmapFactory.decodeByteArray(responseBody, 0, responseBody.size)
+                    if (bitmap != null) {
+                        withContext(Dispatchers.Main) {
+                            sharedViewModel.setFrontImage(bitmap)
 
-                // Convert Bitmap to ByteArray before passing to navigateToNewActivity
-                val byteArrayOutputStream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream)
-                val byteArray = byteArrayOutputStream.toByteArray()
+                            // Convert Bitmap to ByteArray before passing to navigateToNewActivity
+                            val byteArrayOutputStream = ByteArrayOutputStream()
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream)
+                            val byteArray = byteArrayOutputStream.toByteArray()
 
-                // Pass the ByteArray to the next activity
-                navigateToNewActivity(byteArray)
+                            // Pass the ByteArray to the next activity
+                            navigateToNewActivity(byteArray)
+                        }
+
+                        Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
+                    } else {
+                        Log.e("APIResponse", "Failed to decode Bitmap from response")
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        promise.resolve("Image processed and stored successfully")
+                    }
+                }
+            } else {
+                Log.e("APIResponse", "No response body received")
+                withContext(Dispatchers.Main) {
+                    // Show error AlertDialog when no response body is received
+                    showErrorDialog(context, "Failed to process the image. Please try again.")
+
+                    promise.reject("UPLOAD_FAILED", "No response body received")
+                }
             }
-
-            Log.d("APIResponse", "Bitmap successfully stored in ViewModel: $bitmap")
-        } else {
-            Log.e("APIResponse", "Failed to decode Bitmap from response")
-            showErrorDialog(context, "Failed to decode Bitmap from response")
-        }
-
-        withContext(Dispatchers.Main) {
-            promise.resolve("Image processed and stored successfully")
-        }
-    }
-} else {
-    showErrorDialog(context, "No response body received")
-    Log.e("APIResponse", "No response body received")
-    withContext(Dispatchers.Main) {
-        promise.reject("UPLOAD_FAILED", "No response body received")
-    }
-}
 
         } catch (e: Exception) {
             Log.e("APIResponse", "Error uploading image: ${e.message}")
             withContext(Dispatchers.Main) {
-                promise.reject("UPLOAD_ERROR", "Error uploading image: ${e.message}")
+                // Show error AlertDialog when an exception occurs
                 showErrorDialog(context, "Error uploading image: ${e.message}")
+
+                promise.reject("UPLOAD_ERROR", "Error uploading image: ${e.message}")
             }
         }
     }
 }
 
-
+// Helper function to show error AlertDialog
 private fun showErrorDialog(context: Context, message: String) {
-    Log.d("showErrorDialog", "Displaying error dialog with message: $message")
-
-    AlertDialog.Builder(context)
-        .setTitle("Error")
-        .setMessage(message)
-        .setPositiveButton("OK") { dialog, _ ->
-            dialog.dismiss()
-            Log.d("showErrorDialog", "Dialog dismissed by user")
-        }
-        .setCancelable(false)
-        .show()
+    val builder = AlertDialog.Builder(context)
+    builder.setTitle("Error")
+    builder.setMessage(message)
+    builder.setPositiveButton("OK") { dialog, _ ->
+        dialog.dismiss()
+    }
+    builder.setCancelable(false)  // Prevent dialog from being dismissed by tapping outside
+    builder.show()
 }
+
+
+
+
+
+
+
 
 
 
@@ -568,16 +604,7 @@ private fun showErrorDialog(context: Context, message: String) {
 
     
 
-    // Check if the app has camera permissions
-    private fun hasCameraPermission(activity: Activity): Boolean {
-        // Implement permission check logic here
-        return true
-    }
-
-    // Request camera permission if not granted
-    private fun requestCameraPermission(activity: Activity, requestCode: Int) {
-        // Implement permission request logic here
-    }
+    
 
 
        
@@ -592,6 +619,8 @@ private fun showErrorDialog(context: Context, message: String) {
     
 
 }
+
+
 
 
 
